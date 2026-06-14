@@ -86,6 +86,15 @@ def compute_match_prediction(home: str, away: str, strengths: dict[str, float]) 
     exp_points_home = win_p * 3 + draw_p * 1
     exp_points_away = loss_p * 3 + draw_p * 1
 
+    # Build 6x6 score probability matrix (0-5 goals each)
+    score_matrix = []
+    for h in range(6):
+        row = []
+        for a in range(6):
+            p = poisson_pmf(exp_home, h) * poisson_pmf(exp_away, a)
+            row.append(round(p, 4))
+        score_matrix.append(row)
+
     return {
         "home": home,
         "away": away,
@@ -100,6 +109,7 @@ def compute_match_prediction(home: str, away: str, strengths: dict[str, float]) 
         "exp_points_away": round(exp_points_away, 2),
         "home_strength": round(s_home, 3),
         "away_strength": round(s_away, 3),
+        "score_matrix": score_matrix,
     }
 
 

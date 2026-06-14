@@ -4150,8 +4150,8 @@ async function fetchWcMatchPrediction(teamA, teamB) {
     const cacheKey = `${teamA}|${teamB}`;
     if (wcApiData.matchPredictionCache[cacheKey]) return wcApiData.matchPredictionCache[cacheKey];
 
-    // If API is offline, look up from pre-computed match_predictions.json
-    if (apiOnline === false) {
+    // Desktop mode or API offline: look up from pre-computed match_predictions.json
+    if (apiOnline === false || window.__SCOUTFOOTBALL_DESKTOP__) {
         try {
             if (!wcApiData._matchPredictionsAll) {
                 const mpData = await fetchJson("/world-cup/match-predictions");
@@ -4170,9 +4170,11 @@ async function fetchWcMatchPrediction(teamA, teamB) {
                     away_win: found.away_win_p,
                     home_lambda: found.exp_home_goals,
                     away_lambda: found.exp_away_goals,
+                    home_strength: found.home_strength,
+                    away_strength: found.away_strength,
                     model_type: "poisson_strength_ratio",
                     model_version: "wc-static-1.0",
-                    score_matrix: null,
+                    score_matrix: found.score_matrix || null,
                 };
                 wcApiData.matchPredictionCache[cacheKey] = result;
                 return result;
