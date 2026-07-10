@@ -17,6 +17,7 @@ def test_normalization_helpers_strip_accents_punctuation_and_suffixes() -> None:
     # normalize_team_name now uses TEAM_NAME_ALIASES first; "paris saint-germain"
     # maps to "Paris SG". For non-aliased names, it returns the stripped original.
     assert normalize_team_name("Paris Saint-Germain") == "Paris SG"
+    assert normalize_team_name("Manchester Utd") == "Manchester United"
     assert normalize_team_name("Some Unknown FC") == "Some Unknown FC"
     assert normalize_country_name("ENG") == "england"
     assert normalize_position_group("Attacking Midfielder") == "am"

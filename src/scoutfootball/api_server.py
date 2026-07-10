@@ -6,7 +6,7 @@ import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
@@ -16,6 +16,7 @@ from scoutfootball.api import (
     _settings,
     get_action_value_summary,
     get_artifacts_summary,
+    get_head_to_head,
     get_match_prediction,
     get_match_prediction_dc,
     get_model_run_detail,
@@ -148,17 +149,20 @@ def create_app() -> FastAPI:
     def teams_compare(a: str, b: str):
         return get_team_comparison(a, b)
 
-    @app.get("/prediction/{home_team}/{away_team}")
-    def prediction(home_team: str, away_team: str, model: str = "poisson"):
-        if model == "dixon_coles":
-            return get_match_prediction_dc(home_team, away_team)
-        return get_match_prediction(home_team, away_team)
-
     @app.get("/predictions/{home_team}/{away_team}")
     def predictions(home_team: str, away_team: str, model: str = "poisson"):
         if model == "dixon_coles":
             return get_match_prediction_dc(home_team, away_team)
         return get_match_prediction(home_team, away_team)
+
+    @app.get("/predictions/{home_team}/{away_team}/h2h")
+    def predictions_h2h(
+        home_team: str,
+        away_team: str,
+        limit: int = Query(10, ge=1, le=100),
+        form_limit: int = Query(10, ge=1, le=50),
+    ):
+        return get_head_to_head(home_team, away_team, limit=limit, form_limit=form_limit)
 
     @app.get("/predictions/meta")
     def predictions_meta():

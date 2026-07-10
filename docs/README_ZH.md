@@ -45,7 +45,7 @@ ScoutFootball 是本地优先的足球分析平台，把公开数据、手动导
 | **总览** (◎) | 产物注册表、数据健康、覆盖指标 | `/artifacts` API |
 | **球员** (◇) | 球员池、雷达图、位置内百分位 | `/ratings`、`/players/{name}` API |
 | **身价** (€) | 身价偏离散点图、高估/低估排名 | `/value-summary` API |
-| **预测** (△) | 比赛预测、比分概率矩阵 | `/predictions/{home}/{away}` API |
+| **预测** (△) | 比赛预测、比分概率矩阵、交锋记录与近期状态 | `/predictions/{home}/{away}`、`/predictions/{home}/{away}/h2h` API |
 | **球探** (□) | 复核筛选、本地状态/备注、watchlist 快照、CSV 导出 | `/review-queue`、`/watchlist`、`/shortlist` API |
 | **动作价值** (⌁) | xT/VAEP 排名、样本筛选、战术板热区联动 | `/action-values` API |
 | **报告** (▣) | 模型运行记录、后端契约、指标 | `/reports/model-runs` API |

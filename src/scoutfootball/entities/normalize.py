@@ -116,6 +116,7 @@ TEAM_NAME_ALIASES: dict[str, str] = {
     "manchester city": "Manchester City",
     "man utd": "Manchester United",
     "man united": "Manchester United",
+    "manchester utd": "Manchester United",
     "manchester united": "Manchester United",
     "newcastle united": "Newcastle",
     "newcastle": "Newcastle",

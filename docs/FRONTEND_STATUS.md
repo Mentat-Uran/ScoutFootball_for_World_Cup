@@ -55,6 +55,10 @@
 - 球员对比和球队对比端点额外提供静态 fallback：离线时前端加载 `frontend/data/player_compare_pairs.json` 或 `team_compare_pairs.json`，按归一化名称做客户端 pair 查找；未命中 pair 时提示无静态对比数据。
 - 边界：静态 compare pairs 是发布快照子集，不等同于全量 API 覆盖；仅作为离线演示 fallback。
 
+### 比赛交锋记录（2026-07-11）
+
+- 比赛预测页新增"交锋记录"section：H2H 比例条、近期交锋表（最多10场）、两队近期战绩对比（摘要+streak badges+近5场列表）、数据来源标注。查询主队结果由 API 显式返回，球队别名不会反转胜负。没有直接交锋时仍展示两队近期状态；完全空数据与加载失败均不影响概率预测。移动端状态卡改为单列，动态内容使用 `aria-live`。静态回退到带 schema 版本和球队别名索引的 `h2h_pairs.json`，空格球队名与常见数据源变体均可命中。
+
 ### 静态模式
 
 - API 在线时优先读取 FastAPI。

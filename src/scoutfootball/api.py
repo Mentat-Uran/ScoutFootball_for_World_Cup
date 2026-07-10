@@ -26,6 +26,7 @@ from scoutfootball.app.data_loader import (
     load_team_match,
 )
 from scoutfootball.evaluation.scouting_queue import build_scouting_queues
+from scoutfootball.head_to_head import get_head_to_head as _compute_head_to_head
 from scoutfootball.worldcup.data import (
     BIG5_LEAGUES,
     GROUPS,
@@ -616,6 +617,56 @@ def get_match_prediction_dc(home_team: str, away_team: str) -> dict:
     except Exception:
         pass  # enrichment is optional
     return _clean_json_value(result)
+
+
+def get_head_to_head(
+    home_team: str, away_team: str, limit: int = 10, form_limit: int = 10
+) -> dict:
+    """Return head-to-head history, team form, and matchup summary.
+
+    Wraps :func:`scoutfootball.head_to_head.get_head_to_head` with JSON-safe
+    serialization and graceful error handling so the API never crashes.
+    """
+    empty_form_summary = {
+        "wins": 0,
+        "draws": 0,
+        "losses": 0,
+        "goals_for": 0,
+        "goals_against": 0,
+        "points": 0,
+        "streak": [],
+    }
+    empty_summary = {
+        "total_meetings": 0,
+        "home_wins": 0,
+        "draws": 0,
+        "away_wins": 0,
+        "home_goals_avg": 0.0,
+        "away_goals_avg": 0.0,
+        "last_meeting_date": None,
+    }
+    fallback = {
+        "home_team": home_team,
+        "away_team": away_team,
+        "head_to_head": [],
+        "home_form": [],
+        "home_form_summary": empty_form_summary,
+        "away_form": [],
+        "away_form_summary": {**empty_form_summary},
+        "summary": empty_summary,
+        "data_coverage": {
+            "seasons_covered": [],
+            "total_matches_scanned": 0,
+            "source": "Football-Data",
+        },
+    }
+    try:
+        result = _compute_head_to_head(
+            home_team, away_team, limit=limit, form_limit=form_limit
+        )
+        return _clean_json_value(result)
+    except Exception:
+        return _clean_json_value(fallback)
 
 
 def get_value_summary() -> dict:

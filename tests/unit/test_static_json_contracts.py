@@ -38,6 +38,7 @@ _STATIC_FILES: list[tuple[str, list[str]]] = [
     ("health.json", []),
     ("players_list.json", ["player_count", "players"]),
     ("teams.json", ["teams"]),
+    ("h2h_pairs.json", ["schema_version", "pairs", "team_aliases"]),
 ]
 
 
@@ -94,3 +95,18 @@ class TestStaticJsonNoNullTopLevel:
             return
         non_null_count = sum(1 for v in data.values() if v is not None)
         assert non_null_count > 0, f"{filename} has all null values — likely broken export"
+
+
+def test_h2h_static_pairs_and_alias_contract() -> None:
+    data = _read_static_json("h2h_pairs.json")
+    assert isinstance(data, dict)
+    assert data["schema_version"] == "1.0"
+    assert len(data["pairs"]) == 40
+    assert "Arsenal_Manchester_City" in data["pairs"]
+    assert data["team_aliases"]["man_city"] == "Manchester_City"
+    assert data["team_aliases"]["manchester_utd"] == "Manchester_United"
+    assert all(
+        row["queried_home_result"] in {"W", "D", "L"}
+        for pair in data["pairs"].values()
+        for row in pair["head_to_head"]
+    )

@@ -332,26 +332,50 @@ def load_team_match() -> pd.DataFrame:
     return _mark_synthetic(generate_team_match())
 
 
-@lru_cache(maxsize=2)
-def load_player_rolling() -> pd.DataFrame:
+def load_player_rolling(force_refresh: bool = False) -> pd.DataFrame:
+    """Load player rolling features from Parquet (cached with TTL).
+
+    Pass ``force_refresh=True`` to bypass the cache (e.g. after model retraining).
+    """
+    cache_key = "load_player_rolling"
+    if not force_refresh:
+        cached = _ttl_cache.get(cache_key)
+        if cached is not _MISSING:
+            return cached
+
     df = _safe_read_parquet("gold/feature_store/player_rolling.parquet")
     if df is not None:
+        _ttl_cache.set(cache_key, df)
         return df
     logger.warning("player_rolling.parquet not found — falling back to synthetic demo data")
     from scoutfootball.app.demo_data import generate_player_match, generate_player_rolling
 
-    return _mark_synthetic(generate_player_rolling(generate_player_match()))
+    result = _mark_synthetic(generate_player_rolling(generate_player_match()))
+    _ttl_cache.set(cache_key, result)
+    return result
 
 
-@lru_cache(maxsize=2)
-def load_team_rolling() -> pd.DataFrame:
+def load_team_rolling(force_refresh: bool = False) -> pd.DataFrame:
+    """Load team rolling features from Parquet (cached with TTL).
+
+    Pass ``force_refresh=True`` to bypass the cache (e.g. after model retraining).
+    """
+    cache_key = "load_team_rolling"
+    if not force_refresh:
+        cached = _ttl_cache.get(cache_key)
+        if cached is not _MISSING:
+            return cached
+
     df = _safe_read_parquet("gold/feature_store/team_rolling.parquet")
     if df is not None:
+        _ttl_cache.set(cache_key, df)
         return df
     logger.warning("team_rolling.parquet not found — falling back to synthetic demo data")
     from scoutfootball.app.demo_data import generate_team_match, generate_team_rolling
 
-    return _mark_synthetic(generate_team_rolling(generate_team_match()))
+    result = _mark_synthetic(generate_team_rolling(generate_team_match()))
+    _ttl_cache.set(cache_key, result)
+    return result
 
 
 def load_oof_predictions() -> pd.DataFrame:

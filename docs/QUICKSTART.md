@@ -66,8 +66,9 @@ chmod +x scripts/start.sh
 | Trends | 无 | 待同步 |
 | Value vs Performance | 身价 | `/value-summary` |
 | Value Deviation | 身价 | `/value-summary` |
-| Score Matrix | 预测 | `/prediction/{home}/{away}` |
-| Match Prediction | 预测 | `/prediction/{home}/{away}` |
+| Score Matrix | 预测 | `/predictions/{home}/{away}` |
+| Match Prediction | 预测 | `/predictions/{home}/{away}` |
+| Head-to-head history and recent form | 预测 | `/predictions/{home}/{away}/h2h` |
 | World Cup Schedule/Squads/Compare/Probability | 世界杯四视图 | `/world-cup/*`, `/worldcup/teams` |
 | - | 总览 | `/artifacts`, `/health`, `/ratings/meta` |
 | Scouting Queue | 球探 | `/review-queue`, `/watchlist`, `/shortlist` |

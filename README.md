@@ -34,7 +34,7 @@ The focus right now: upgrading the rating system into an interpretable, evaluabl
 - **Truth Label Contracts:** Schema and validation for `player_truth_labels.parquet` — transfermarkt value, awards, expert tiers, manual calibration. The current local table has 41,389 rows, but label independence and temporal evaluation remain release gates.
 - **Neural Rating Candidate:** `scoutfootball train-rating-nn` trains a supervised sklearn MLP candidate from `rating_feature_matrix.parquet` + `player_truth_labels.parquet` and writes artifacts to `data/models/player_rating_nn/`; it does not replace `player_ratings_optimized.parquet` unless it beats the current optimizer on the same holdout and baseline checks.
 - **Model Evaluation & Cards:** Data sources, label definitions, bounds, and known biases documented in `docs/MODEL_CARD.md`.
-- **Match Prediction:** Independent Poisson baseline with score probability matrices.
+- **Match Prediction:** Independent Poisson baseline with score probability matrices, plus Football-Data head-to-head history and recent-form comparison with offline snapshots.
 - **Product & Visuals:** 15-page Streamlit console with artifact overview, scouting queue, and action-value sample pages. Liquid Glass static frontend with 7 analysis views (Overview, Players, Value, Matches, Scouting, Action Values, Reports), 4 World Cup views (Schedule, Squads, Compare, Probability), and a first-slice local tactical board. FastAPI read-only backend serves artifacts, player profiles, rating snapshots, predictions, review queue, watchlist, shortlist, action-value samples, and model runs. `mplsoccer` powers pitch plots, pizza charts, and shot maps. The scouting desk exports and imports a versioned browser-local workspace with revision/timestamp audit fields, import previews, conflict detection, safe merge, and explicit replacement. Frontend rendering escapes API/local JSON strings, CSV exports guard against spreadsheet formula injection, and tactical-board JSON imports pass through a schema sanitizer. API status pill distinguishes LIVE / STATIC / OFFLINE; review queue is paginated (50 per page); NaN/undefined values are guarded; static export no longer writes repr strings for dataclass/Pydantic responses.
 
 ### Liquid Glass Frontend
@@ -48,7 +48,7 @@ The `frontend/` directory contains a static analysis workbench with a consistent
 | **Overview** (◎) | Artifact registry, data health, coverage metrics | `/artifacts` API |
 | **Players** (◇) | Player pool, radar charts, position percentiles | `/ratings`, `/players/{name}` API |
 | **Value** (€) | Value deviation scatter, over/under-valued rankings | `/value-summary` API |
-| **Matches** (△) | Match prediction, score probability matrix | `/predictions/{home}/{away}` API |
+| **Matches** (△) | Match prediction, score probability matrix, head-to-head history and recent form | `/predictions/{home}/{away}`, `/predictions/{home}/{away}/h2h` API |
 | **Scouting** (□) | Review queue filters, local status/notes, watchlist snapshots, CSV plus versioned workspace import/export | `/review-queue`, `/watchlist`, `/shortlist` API + browser-local workspace JSON |
 | **Actions** (⌁) | xT/VAEP ranking, sample filters, tactical heatmap handoff | `/action-values` API |
 | **Reports** (▣) | Model runs, backend contracts, metrics | `/reports/model-runs` API |

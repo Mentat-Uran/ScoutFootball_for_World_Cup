@@ -81,6 +81,7 @@ ScoutFootball 的长期形态是本地优先的足球数据研究平台，而不
 
 ## 已完成
 
+- [x] **比赛交锋记录视图**（2026-07-11）：新增 `GET /predictions/{home}/{away}/h2h` API 端点，从 `combined_results.parquet` 计算 H2H 交锋史、两队近期 form 和汇总统计。前端比赛预测页新增"交锋记录"section 含比例条、交锋表、战绩对比；没有直接交锋时仍展示近期状态，移动端单列降级。静态导出 `h2h_pairs.json`（40 对）。比赛表与规范化结果使用 TTL 缓存，单次查询从约 3.3 秒降至约 0.06 秒；API 限制查询条数，别名查询通过 `queried_home_result` 保证胜负视角正确。同步修复 `load_player_rolling`/`load_team_rolling` 永久 lru_cache 过期问题（迁移到 TTL 缓存），删除未使用的 `/prediction/{home}/{away}` 单数别名端点。
 - [x] **搜索建议端点**（2026-07-10）：新增 `GET /search?q=&type=&limit=` 端点，前缀优先+子串回退匹配球员和球队，支持 type 过滤和 limit 上限 25。前端新增 SearchTypeahead 组件，接入球员搜索、球员对比、球队对比共 5 个输入框，支持键盘导航和防抖。
 - [x] **TTL 缓存迁移**（2026-07-10）：将 `_load_all_player_ratings`、`load_model_meta`、`load_league_metrics`、`load_player_value_metrics` 和 `_wc_cache` 从永久 lru_cache 迁移到 TTL 缓存（默认 300 秒，可通过 `SCOUTFOOTBALL_CACHE_TTL_SECONDS` 环境变量配置），支持 `force_refresh` 参数，修复模型重训后 API 返回过期数据的问题。
 - [x] **静态对比 fallback 数据**（2026-07-10）：扩展 `scripts/export_static_frontend_data.py` 新增 `compare` 导出段，生成 `player_compare_pairs.json` 和 `team_compare_pairs.json`；前端静态回退映射支持 compare 端点的离线 pair 查找。

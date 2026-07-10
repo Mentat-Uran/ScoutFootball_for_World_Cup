@@ -35,6 +35,32 @@ WORLDCUP_DIR = DATA_DIR / "worldcup"
 SQUADS_DIR = WORLDCUP_DIR / "squads"
 MANIFEST_PATH = FRONTEND_DIR / "data_manifest.json"
 
+# Common big-5 league strong-team pairs for head-to-head static export.
+# Each ordered pair is exported in BOTH directions so the frontend can look
+# up either "{A}_{B}" or "{B}_{A}".
+H2H_PAIRS = [
+    ("Arsenal", "Chelsea"),
+    ("Arsenal", "Manchester City"),
+    ("Arsenal", "Liverpool"),
+    ("Arsenal", "Tottenham"),
+    ("Chelsea", "Liverpool"),
+    ("Chelsea", "Manchester City"),
+    ("Manchester City", "Liverpool"),
+    ("Manchester City", "Manchester United"),
+    ("Liverpool", "Manchester United"),
+    ("Real Madrid", "Barcelona"),
+    ("Real Madrid", "Atletico Madrid"),
+    ("Barcelona", "Atletico Madrid"),
+    ("Bayern Munich", "Borussia Dortmund"),
+    ("Juventus", "Inter"),
+    ("Juventus", "AC Milan"),
+    ("Inter", "AC Milan"),
+    ("Inter", "Napoli"),
+    ("PSG", "Marseille"),
+    ("Lyon", "Marseille"),
+    ("Lyon", "PSG"),
+]
+
 
 def configure_output_paths(profile: str) -> None:
     global DATA_DIR, WORLDCUP_DIR, SQUADS_DIR, MANIFEST_PATH
@@ -379,6 +405,49 @@ def export_compare(limit: int = DEFAULT_COMPARE_LIMIT) -> None:
     )
 
 
+def export_h2h() -> None:
+    """Export head-to-head data for common team pairs (both directions).
+
+    For each ordered pair (A, B) in ``H2H_PAIRS`` this writes both directions
+    under filename-safe team slugs. A compact alias index lets static clients
+    resolve dataset variants such as ``Man City`` and ``Manchester Utd``
+    without duplicating the pair payloads. Per-pair failures are logged and
+    skipped; the module itself returns empty structures when
+    ``combined_results.parquet`` is missing.
+    """
+    from scoutfootball.entities.normalize import TEAM_NAME_ALIASES, normalize_team_name
+    from scoutfootball.head_to_head import get_head_to_head
+
+    out: dict[str, dict] = {}
+    for home, away in H2H_PAIRS:
+        for a, b in ((home, away), (away, home)):
+            key = f"{_team_slug(a)}_{_team_slug(b)}"
+            try:
+                out[key] = get_head_to_head(a, b, limit=10, form_limit=5)
+            except Exception as exc:
+                print(f"  WARN: h2h {a} vs {b} failed: {exc}")
+                continue
+
+    pair_teams = {team for pair in H2H_PAIRS for team in pair}
+    display_by_normalized = {normalize_team_name(team): team for team in pair_teams}
+    alias_index = {
+        _team_slug(team).casefold(): _team_slug(team)
+        for team in pair_teams
+    }
+    for alias, canonical in TEAM_NAME_ALIASES.items():
+        display = display_by_normalized.get(normalize_team_name(canonical))
+        if display:
+            alias_index[_team_slug(alias).casefold()] = _team_slug(display)
+
+    payload = {
+        "schema_version": "1.0",
+        "pairs": out,
+        "team_aliases": dict(sorted(alias_index.items())),
+    }
+    _write_json(DATA_DIR / "h2h_pairs.json", payload)
+    print(f"  h2h_pairs.json ({len(out)} entries)")
+
+
 def write_manifest() -> None:
     """Write a small manifest file so the frontend can show last-updated time."""
     import datetime as dt
@@ -437,7 +506,7 @@ def main() -> int:
         choices=[
             "basics", "ratings", "value", "predictions",
             "action_values", "scouting", "model_runs",
-            "worldcup", "compare", "player_profiles", "manifest",
+            "worldcup", "compare", "h2h", "player_profiles", "manifest",
         ],
         help="Sections to skip",
     )
@@ -476,6 +545,7 @@ def main() -> int:
         ("model_runs", lambda: export_model_runs()),
         ("worldcup", lambda: export_worldcup()),
         ("compare", lambda: export_compare(args.compare_limit)),
+        ("h2h", lambda: export_h2h()),
     ]
 
     for name, fn in sections:

@@ -408,6 +408,33 @@ Match prediction between two teams.
 **Query params**: `model` ("poisson" or "dixon_coles")
 **Response**: `{ home_team, away_team, model_type, home_lambda, away_lambda, home_win, draw, away_win, over_2_5, btts_yes }`
 
+> 注：`/prediction/{home}/{away}`（单数）别名端点已删除，`/predictions/{home}/{away}`（复数）为唯一路由。
+
+### GET /predictions/{home_team}/{away_team}/h2h
+
+返回两队历史交锋记录、近期 form 和汇总统计。
+
+**查询参数：**
+- `limit` (int, default=10, range=1–100): H2H 交锋记录条数上限；越界返回 HTTP 422
+- `form_limit` (int, default=10, range=1–50): 每队近期 form 条数上限；越界返回 HTTP 422
+
+**响应字段：**
+- `home_team` (str): 查询的主队名
+- `away_team` (str): 查询的客队名
+- `head_to_head` (list[dict]): H2H 交锋记录，按日期倒序，每条含 `date`/`season`/`league`/`home_team`/`away_team`/`home_goals`/`away_goals`/`result`/`queried_home_result`；后者始终从查询主队视角返回 `W`/`D`/`L`，避免别名导致前端结果反转
+- `home_form` (list[dict]): 主队近期比赛列表，每条含 `date`/`season`/`league`/`opponent`/`venue`/`goals_for`/`goals_against`/`result`
+- `home_form_summary` (dict): 主队 form 汇总，含 `wins`/`draws`/`losses`/`goals_for`/`goals_against`/`points`/`streak`
+- `away_form` (list[dict]): 客队近期比赛列表
+- `away_form_summary` (dict): 客队 form 汇总
+- `summary` (dict): H2H 汇总统计，含 `total_meetings`/`home_wins`/`draws`/`away_wins`/`home_goals_avg`/`away_goals_avg`/`last_meeting_date`
+- `data_coverage` (dict): 数据覆盖范围，含 `seasons_covered` (list[str])/`total_matches_scanned` (int)/`source` (str)
+
+**数据范围：** Football-Data 10 赛季（1617–2526）、20 联赛。不代表全量历史交锋。
+
+**静态回退：** 纯静态服务器回退到 `frontend/data/h2h_pairs.json`。文件使用 `{schema_version, pairs, team_aliases}` 契约；`pairs` 按 `{home_slug}_{away_slug}` 保存 40 个有向组合，`team_aliases` 将 `Man City`、`Manchester Utd` 等数据源变体映射到同一静态键。
+
+**缓存：** 源比赛表和规范化球队名使用统一 TTL 缓存（默认 300 秒，可由 `SCOUTFOOTBALL_CACHE_TTL_SECONDS` 调整）；`force_refresh=True` 可供离线重导出绕过缓存。
+
 ### GET /ratings/meta
 Model metadata and league metrics.
 
@@ -667,6 +694,8 @@ the API without a process restart:
 - `load_model_meta()`
 - `load_league_metrics()`
 - `load_player_value_metrics()`
+- `load_player_rolling()` (migrated in H2H round)
+- `load_team_rolling()` (migrated in H2H round)
 - `_wc_cache` (world-cup helpers in `src/scoutfootball/api.py`)
 - `get_prediction_calibration()` (5-minute TTL; migrated in an earlier round)
 

@@ -561,6 +561,9 @@ function _staticUrlFor(apiPath) {
     // Player profile: use pre-exported file if available.
     const player = m.match(/^\/players?\/(.+)$/);
     if (player) return `/data/player_profiles/${encodeURIComponent(_teamSlug(decodeURIComponent(player[1])))}.json`;
+    // H2H: /predictions/<home>/<away>/h2h → pairs file (searched client-side by key)
+    const h2h = m.match(/^\/predictions\/(.+)\/(.+)\/h2h$/);
+    if (h2h) return "/data/h2h_pairs.json";
     // Match predictions: /predictions/<home>/<away> → generic static prediction
     const pred = m.match(/^\/predictions\/.+\/.+$/);
     if (pred) return "/data/predictions_default.json";
@@ -1713,6 +1716,210 @@ async function fetchPlayerComparison(a, b) {
     }
 }
 
+async function fetchHeadToHead(home, away) {
+    try {
+        const data = await fetchJson(`/predictions/${encodeURIComponent(home)}/${encodeURIComponent(away)}/h2h`);
+        // Static fallback returns a pairs object keyed by "Home_Away"; try both orderings.
+        if (data && !data.head_to_head && typeof data === "object" && !Array.isArray(data)) {
+            const pairs = data.pairs && typeof data.pairs === "object" ? data.pairs : data;
+            const aliases = data.team_aliases && typeof data.team_aliases === "object"
+                ? data.team_aliases
+                : {};
+            const slug = (s) => {
+                const raw = _teamSlug(s);
+                return aliases[raw.toLowerCase()] || raw;
+            };
+            const key1 = `${slug(home)}_${slug(away)}`;
+            const key2 = `${slug(away)}_${slug(home)}`;
+            if (pairs[key1]) return pairs[key1];
+            if (pairs[key2]) return pairs[key2];
+            return { error: "H2H data not available offline for this pair" };
+        }
+        return data;
+    } catch (err) {
+        console.warn("Failed to fetch head-to-head:", err);
+        return { error: "Failed to load head-to-head" };
+    }
+}
+
+function _h2hResultBadge(match, queriedHomeTeam) {
+    const perspectiveResult = String(match.queried_home_result || "").toUpperCase();
+    if (["W", "D", "L"].includes(perspectiveResult)) return perspectiveResult;
+    const ftr = String(match.result || "").toUpperCase();
+    if (ftr === "D") return "D";
+    const matchHome = String(match.home_team || "").trim().toLowerCase();
+    const queriedHome = String(queriedHomeTeam || "").trim().toLowerCase();
+    const matchHomeIsQueriedHome = matchHome === queriedHome;
+    if (matchHomeIsQueriedHome) {
+        return ftr === "H" ? "W" : "L";
+    }
+    return ftr === "A" ? "W" : "L";
+}
+
+function _h2hBadgeClass(result) {
+    const r = String(result || "").toUpperCase();
+    if (r === "W") return "h2h-badge-w";
+    if (r === "D") return "h2h-badge-d";
+    return "h2h-badge-l";
+}
+
+function _renderFormColumn(teamName, formSummary, formList) {
+    const wins = Number(formSummary.wins) || 0;
+    const draws = Number(formSummary.draws) || 0;
+    const losses = Number(formSummary.losses) || 0;
+    const gf = Number(formSummary.goals_for) || 0;
+    const ga = Number(formSummary.goals_against) || 0;
+    const streak = Array.isArray(formSummary.streak) ? formSummary.streak : [];
+
+    let html = `<div class="h2h-form-card">`;
+    html += `<div class="h2h-form-team">${teamName}</div>`;
+    html += `<div class="h2h-form-summary">`;
+    html += `${wins}胜 ${draws}平 ${losses}负, 进${gf}球 失${ga}球`;
+    html += `</div>`;
+
+    if (streak.length > 0) {
+        html += `<div class="h2h-form-streak" aria-label="近五场战绩">`;
+        for (const r of streak) {
+            html += `<span class="${_h2hBadgeClass(r)}" style="font-size:0.68rem">${escapeHtml(String(r).toUpperCase())}</span>`;
+        }
+        html += `</div>`;
+    }
+
+    const recent = formList.slice(0, 5);
+    if (recent.length > 0) {
+        html += `<div class="h2h-form-list">`;
+        for (const m of recent) {
+            const date = escapeHtml(String(m.date || "–"));
+            const opp = escapeHtml(String(m.opponent || "–"));
+            const venue = escapeHtml(String(m.venue || ""));
+            const gf2 = m.goals_for != null ? m.goals_for : "–";
+            const ga2 = m.goals_against != null ? m.goals_against : "–";
+            const badge = String(m.result || "").toUpperCase();
+            html += `<div class="h2h-form-row">`;
+            html += `<span class="h2h-form-opponent">${date}${venue ? ` <span class="h2h-venue">[${venue}]</span>` : ""} vs ${opp}</span>`;
+            html += `<span class="h2h-form-score"><strong>${escapeHtml(String(gf2))}-${escapeHtml(String(ga2))}</strong> <span class="${_h2hBadgeClass(badge)}">${escapeHtml(badge || "–")}</span></span>`;
+            html += `</div>`;
+        }
+        html += `</div>`;
+    }
+
+    html += `</div>`;
+    return html;
+}
+
+async function renderHeadToHead(home, away) {
+    const container = document.getElementById("match-h2h-content");
+    const statusPill = document.getElementById("h2h-status");
+    if (!container) return;
+
+    container.setAttribute("aria-busy", "true");
+    container.innerHTML = `<p class="h2h-message">加载中...</p>`;
+    if (statusPill) { statusPill.textContent = "loading"; statusPill.className = "status-pill status-medium"; }
+
+    const data = await fetchHeadToHead(home, away);
+
+    if (!data || data.error) {
+        container.innerHTML = `<p class="h2h-message">交锋记录加载失败</p>`;
+        container.setAttribute("aria-busy", "false");
+        if (statusPill) { statusPill.textContent = "–"; }
+        return;
+    }
+
+    const h2h = Array.isArray(data.head_to_head) ? data.head_to_head : [];
+    const summary = data.summary || {};
+    const totalMeetings = Number(summary.total_meetings) || 0;
+    const homeForm = Array.isArray(data.home_form) ? data.home_form : [];
+    const awayForm = Array.isArray(data.away_form) ? data.away_form : [];
+
+    if (h2h.length === 0 && homeForm.length === 0 && awayForm.length === 0) {
+        container.innerHTML = `<p class="h2h-message">暂无交锋或近期比赛数据</p>`;
+        container.setAttribute("aria-busy", "false");
+        if (statusPill) { statusPill.textContent = "0"; }
+        return;
+    }
+
+    const homeName = escapeHtml(data.home_team || home);
+    const awayName = escapeHtml(data.away_team || away);
+    const homeWins = Number(summary.home_wins) || 0;
+    const draws = Number(summary.draws) || 0;
+    const awayWins = Number(summary.away_wins) || 0;
+    const total = homeWins + draws + awayWins;
+
+    let html = "";
+
+    // 1. H2H Summary bar (CSS flexbox proportional bars)
+    if (total > 0) {
+        html += `<div class="h2h-summary">`;
+        html += `<div class="h2h-eyebrow">交锋总览 · ${total} 场</div>`;
+        html += `<div class="h2h-ratio" role="img" aria-label="${homeName} ${homeWins} 胜，平局 ${draws} 场，${awayName} ${awayWins} 胜">`;
+        if (homeWins > 0) html += `<div class="h2h-segment h2h-segment-home" style="flex:${homeWins}">${homeName} ${homeWins}</div>`;
+        if (draws > 0) html += `<div class="h2h-segment h2h-segment-draw" style="flex:${draws}">平 ${draws}</div>`;
+        if (awayWins > 0) html += `<div class="h2h-segment h2h-segment-away" style="flex:${awayWins}">${awayWins} ${awayName}</div>`;
+        html += `</div>`;
+
+        const homeAvg = Number(summary.home_goals_avg) || 0;
+        const awayAvg = Number(summary.away_goals_avg) || 0;
+        html += `<div class="h2h-meta">场均进球: ${homeName} ${homeAvg.toFixed(2)} · ${awayName} ${awayAvg.toFixed(2)}</div>`;
+        if (summary.last_meeting_date) html += `<div class="h2h-meta">上次交锋: ${escapeHtml(String(summary.last_meeting_date))}</div>`;
+        html += `</div>`;
+    } else {
+        html += `<p class="h2h-message h2h-message-inline">暂无直接交锋记录，仍可参考近期状态</p>`;
+    }
+
+    // 2. H2H Recent Matches list
+    const recentH2h = h2h.slice(0, 10);
+    if (recentH2h.length > 0) {
+        html += `<div class="h2h-history">`;
+        html += `<div class="h2h-eyebrow">近期交锋</div>`;
+        html += `<div class="table-scroll h2h-table-scroll">`;
+        html += `<table class="h2h-table">`;
+        html += `<caption class="sr-only">${homeName} 与 ${awayName} 的近期交锋</caption>`;
+        html += `<thead><tr><th style="text-align:left">日期</th><th style="text-align:left">赛事</th><th style="text-align:left">比分</th><th>结果</th></tr></thead><tbody>`;
+        for (const m of recentH2h) {
+            const date = escapeHtml(String(m.date || "–"));
+            const league = escapeHtml(String(m.league || "–"));
+            const season = escapeHtml(String(m.season || ""));
+            const mHome = escapeHtml(String(m.home_team || "–"));
+            const mAway = escapeHtml(String(m.away_team || "–"));
+            const hg = m.home_goals != null ? escapeHtml(String(m.home_goals)) : "–";
+            const ag = m.away_goals != null ? escapeHtml(String(m.away_goals)) : "–";
+            const badge = _h2hResultBadge(m, data.home_team || home);
+            const leagueLabel = season ? `${league} ${season}` : league;
+            html += `<tr>`;
+            html += `<td class="h2h-muted h2h-nowrap">${date}</td>`;
+            html += `<td class="h2h-muted">${leagueLabel}</td>`;
+            html += `<td><strong>${mHome} ${hg} - ${ag} ${mAway}</strong></td>`;
+            html += `<td class="h2h-result-cell"><span class="${_h2hBadgeClass(badge)}" aria-label="查询主队结果 ${escapeHtml(badge)}">${escapeHtml(badge)}</span></td>`;
+            html += `</tr>`;
+        }
+        html += `</tbody></table></div></div>`;
+    }
+
+    // 3. Form comparison (two columns side by side)
+    const homeFormSummary = data.home_form_summary || {};
+    const awayFormSummary = data.away_form_summary || {};
+
+    html += `<div class="h2h-form-grid">`;
+    html += _renderFormColumn(homeName, homeFormSummary, homeForm);
+    html += _renderFormColumn(awayName, awayFormSummary, awayForm);
+    html += `</div>`;
+
+    // 4. Data coverage note
+    const coverage = data.data_coverage || {};
+    const seasons = Array.isArray(coverage.seasons_covered) ? coverage.seasons_covered : [];
+    const source = escapeHtml(String(coverage.source || "Football-Data"));
+    html += `<div class="h2h-coverage">`;
+    html += `数据来源: ${source}, 覆盖 ${seasons.length} 赛季`;
+    html += `</div>`;
+
+    container.innerHTML = html;
+    container.setAttribute("aria-busy", "false");
+    if (statusPill) {
+        statusPill.textContent = String(totalMeetings);
+        statusPill.className = `status-pill ${totalMeetings > 0 ? "status-high" : "status-medium"}`;
+    }
+}
+
 async function renderCompare() {
     const btn = document.getElementById("compare-btn");
     const inputA = document.getElementById("compare-input-a");
@@ -2384,6 +2591,9 @@ async function renderMatches() {
 
         calibEl.innerHTML = calibHtml;
     }
+
+    // Head-to-head section (loads independently — failures don't affect prediction display)
+    renderHeadToHead(appState.home, appState.away).catch((e) => console.warn("H2H render failed:", e));
 }
 
 function poisson(lambda, k) {
