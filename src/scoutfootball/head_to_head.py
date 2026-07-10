@@ -305,7 +305,8 @@ def compute_form_trend(form_list: list[dict]) -> dict:
     # Form rating: 0-100. Base from ppg (max 3), momentum adds or subtracts.
     base_rating = (ppg / 3.0) * 100.0
     momentum_adj = max(-25.0, min(25.0, momentum / 3.0 * 100.0))
-    form_rating = max(0.0, min(100.0, round(base_rating * 0.7 + (base_rating + momentum_adj) * 0.3, 1)))
+    rating_raw = base_rating * 0.7 + (base_rating + momentum_adj) * 0.3
+    form_rating = max(0.0, min(100.0, round(rating_raw, 1)))
 
     if matches < 3:
         trend_label = "insufficient"

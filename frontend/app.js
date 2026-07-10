@@ -1336,7 +1336,10 @@ async function renderPlayerProfile() {
             return `<div><span>${escapeHtml(label)}</span><strong>${escapeHtml(sources.join(', '))}</strong></div>`;
         })()}
         ${/* Position percentile */ (() => {
-            const pct = profile ? (profile.position_percentile ?? profile.percentile_rank ?? null) : null;
+            const pcts = profile ? (profile.position_percentiles || null) : null;
+            if (!pcts) return '';
+            const overall = pcts.overall_score || {};
+            const pct = overall.percentile;
             if (pct == null) return '';
             const label = appState.lang === 'zh' ? '位置百分位' : 'Position percentile';
             return `<div><span>${escapeHtml(label)}</span><strong>\u25C6 ${escapeHtml(String(Math.round(pct)))}pct</strong></div>`;
@@ -1388,7 +1391,7 @@ async function renderPlayerProfile() {
     const tacticalActionsEl = document.getElementById("player-tactical-actions");
     if (tacticalActionsEl) {
         const zT = appState.lang === 'zh';
-        tacticalActionsEl.innerHTML = `<button class="text-button" id="btn-send-tactical" type="button" style="font-size:0.82rem;padding:0.3rem 0.6rem">\u25C6 ${zT ? '发送到战术板' : 'Send to tactical board'}</button> <button class="text-button" id="btn-export-csv" type="button" style="font-size:0.82rem;padding:0.3rem 0.6rem">${zT ? '导出 CSV' : 'Export CSV'}</button>`;
+        tacticalActionsEl.innerHTML = `<button class="text-button" id="btn-send-tactical" type="button" style="font-size:0.82rem;padding:0.3rem 0.6rem">\u25C6 ${zT ? '发送到战术板' : 'Send to tactical board'}</button> <button class="text-button" id="btn-export-csv" type="button" style="font-size:0.82rem;padding:0.3rem 0.6rem">${zT ? '导出报告 CSV' : 'Export report CSV'}</button> <button class="text-button" id="btn-export-json" type="button" style="font-size:0.82rem;padding:0.3rem 0.6rem">${zT ? '导出 JSON' : 'Export JSON'}</button>`;
         const sendBtn = document.getElementById("btn-send-tactical");
         if (sendBtn) {
             sendBtn.addEventListener("click", () => {
@@ -1418,40 +1421,236 @@ async function renderPlayerProfile() {
         const csvBtn = document.getElementById("btn-export-csv");
         if (csvBtn) {
             csvBtn.addEventListener("click", () => {
-                exportPlayerProfileCSV(player, profile, detailScore, detailPosition, detailMinutes, detailMatches, detailConfidence, detailLeague);
+                exportPlayerScoutingReportCSV(player, profile, {
+                    score: detailScore, position: detailPosition, minutes: detailMinutes,
+                    matches: detailMatches, confidence: detailConfidence, league: detailLeague,
+                });
+            });
+        }
+        const jsonBtn = document.getElementById("btn-export-json");
+        if (jsonBtn) {
+            jsonBtn.addEventListener("click", () => {
+                exportPlayerScoutingReportJSON(player, profile, {
+                    score: detailScore, position: detailPosition, minutes: detailMinutes,
+                    matches: detailMatches, confidence: detailConfidence, league: detailLeague,
+                });
             });
         }
     }
 }
 
-function exportPlayerProfileCSV(player, profile, detailScore, detailPosition, detailMinutes, detailMatches, detailConfidence, detailLeague) {
+function _radarLabels() {
+    return ["Attack", "Possession", "Defense", "Reliability", "Impact"];
+}
+
+function _buildScoutingReport(player, profile, detail) {
     const radar = (profile && profile.radar) ? profile.radar : (player.radar || []);
-    const radarLabels = ["Attack", "Possession", "Defense", "Volume", "Overall"];
-    const header = [
-        "name", "team", "position", "rating", "confidence", "season",
-        "minutes", "matches", "league",
-        ...radarLabels.map(l => `radar_${l.toLowerCase()}`),
-    ];
-    const row = [
-        player.name,
-        player.team,
-        detailPosition,
-        detailScore,
-        detailConfidence,
-        player.season,
-        detailMinutes,
-        detailMatches,
-        detailLeague || "",
-        ...radar.map(v => v != null ? Math.round(v) : ""),
-    ];
-    const csv = [header, row].map(r => r.map(csvCell).join(",")).join("\n");
+    const radarLabels = _radarLabels();
+    const radarEntries = radarLabels.map((label, i) => ({
+        label,
+        value: radar[i] != null ? Math.round(radar[i]) : null,
+    }));
+
+    const percentiles = [];
+    if (profile && profile.position_percentiles && typeof profile.position_percentiles === "object") {
+        for (const [key, val] of Object.entries(profile.position_percentiles)) {
+            if (val && val.percentile != null) {
+                percentiles.push({ dimension: key, label: val.label || key, percentile: Math.round(val.percentile) });
+            }
+        }
+    }
+
+    const xtSummary = (profile && profile.xt_summary) ? profile.xt_summary : {};
+    const trend = (profile && profile.trend_3seasons) ? profile.trend_3seasons : {};
+    const trendSeasons = Array.isArray(trend.seasons) ? trend.seasons : [];
+    const trendDelta = trend.delta || {};
+    const lowConfReasons = Array.isArray(profile && profile.low_confidence_reasons) ? profile.low_confidence_reasons : [];
+    const seasonsHistory = Array.isArray(profile && profile.seasons) ? profile.seasons : [];
+
+    return {
+        player: player.name || "",
+        team: player.team || "",
+        position: detail.position || player.position || "",
+        rating: detail.score != null ? Math.round(detail.score * 10) / 10 : (player.rating || ""),
+        confidence: detail.confidence || (profile ? profile.confidence_level : "") || "",
+        season: player.season || (profile ? profile.season : "") || "",
+        minutes: detail.minutes ?? (profile ? profile.minutes : "") ?? "",
+        matches: detail.matches ?? (profile ? profile.matches : "") ?? "",
+        league: detail.league || (profile ? profile.league : "") || "",
+        npg_p90: profile ? profile.npg_p90 : null,
+        assists_p90: profile ? profile.assists_p90 : null,
+        defense_composite: profile ? profile.defense_composite : null,
+        possession_composite: profile ? profile.possession_composite : null,
+        radar: radarEntries,
+        position_percentiles: percentiles,
+        xt_summary: {
+            available: xtSummary.available || false,
+            xT_per_90: xtSummary.xT_per_90 ?? null,
+            xT_total: xtSummary.xT_total ?? null,
+            xT_percentile: xtSummary.xT_percentile ?? null,
+            coverage_note: xtSummary.coverage_note || "",
+        },
+        trend_3seasons: trendSeasons.map(s => ({
+            season: s.season || "",
+            team: s.team || "",
+            score: s.optimized_score ?? null,
+            minutes: s.minutes ?? null,
+        })),
+        trend_delta: {
+            season_from: trendDelta.season_from || "",
+            season_to: trendDelta.season_to || "",
+            score_change: trendDelta.score_change ?? null,
+            goals_change: trendDelta.goals_change ?? null,
+            assists_change: trendDelta.assists_change ?? null,
+            minutes_change: trendDelta.minutes_change ?? null,
+        },
+        low_confidence_reasons: lowConfReasons,
+        seasons_history: seasonsHistory.map(s => ({
+            season: s.season || "",
+            team: s.team || "",
+            league: s.league || "",
+            position_group: s.position_group || "",
+            score: s.optimized_score ?? null,
+            minutes: s.minutes ?? null,
+        })),
+        watchlist_note: watchlistNotes[player.name] || "",
+        shortlist_note: scoutShortlistNotes[player.name] || "",
+        exported_at: new Date().toISOString(),
+        app_version: APP_VERSION,
+    };
+}
+
+function exportPlayerScoutingReportCSV(player, profile, detail) {
+    const report = _buildScoutingReport(player, profile, detail);
+    const lines = [];
+    const safeName = (player.name || "player").replace(/[^a-zA-Z0-9\u4e00-\u9fff_-]/g, "_");
+
+    // Section 1: Profile
+    lines.push(["# Scouting Report"]);
+    lines.push(["field", "value"]);
+    lines.push(["player", report.player]);
+    lines.push(["team", report.team]);
+    lines.push(["position", report.position]);
+    lines.push(["rating", report.rating]);
+    lines.push(["confidence", report.confidence]);
+    lines.push(["season", report.season]);
+    lines.push(["minutes", report.minutes]);
+    lines.push(["matches", report.matches]);
+    lines.push(["league", report.league]);
+    lines.push(["npg_p90", report.npg_p90 ?? ""]);
+    lines.push(["assists_p90", report.assists_p90 ?? ""]);
+    lines.push(["defense_composite", report.defense_composite ?? ""]);
+    lines.push(["possession_composite", report.possession_composite ?? ""]);
+    lines.push([]);
+
+    // Section 2: Radar
+    lines.push(["# Radar (0-100 percentile)"]);
+    lines.push(["dimension", "value"]);
+    for (const r of report.radar) {
+        lines.push([r.label, r.value ?? ""]);
+    }
+    lines.push([]);
+
+    // Section 3: Position percentiles
+    if (report.position_percentiles.length > 0) {
+        lines.push(["# Position Percentiles"]);
+        lines.push(["dimension_key", "label", "percentile"]);
+        for (const p of report.position_percentiles) {
+            lines.push([p.dimension, p.label, p.percentile]);
+        }
+        lines.push([]);
+    }
+
+    // Section 4: xT summary
+    if (report.xt_summary.available || report.xt_summary.xT_per_90 != null) {
+        lines.push(["# xT Summary"]);
+        lines.push(["field", "value"]);
+        lines.push(["available", report.xt_summary.available]);
+        lines.push(["xT_per_90", report.xt_summary.xT_per_90 ?? ""]);
+        lines.push(["xT_total", report.xt_summary.xT_total ?? ""]);
+        lines.push(["xT_percentile", report.xt_summary.xT_percentile ?? ""]);
+        if (report.xt_summary.coverage_note) lines.push(["coverage_note", report.xt_summary.coverage_note]);
+        lines.push([]);
+    }
+
+    // Section 5: 3-season trend
+    if (report.trend_3seasons.length > 0) {
+        lines.push(["# 3-Season Trend"]);
+        lines.push(["season", "team", "score", "minutes"]);
+        for (const s of report.trend_3seasons) {
+            lines.push([s.season, s.team, s.score ?? "", s.minutes ?? ""]);
+        }
+        const d = report.trend_delta;
+        if (d.season_from) {
+            lines.push(["delta_from", d.season_from, "", ""]);
+            lines.push(["delta_to", d.season_to, "", ""]);
+            lines.push(["score_change", d.score_change ?? "", "", ""]);
+            lines.push(["goals_change", d.goals_change ?? "", "", ""]);
+            lines.push(["assists_change", d.assists_change ?? "", "", ""]);
+            lines.push(["minutes_change", d.minutes_change ?? "", "", ""]);
+        }
+        lines.push([]);
+    }
+
+    // Section 6: Low confidence reasons
+    if (report.low_confidence_reasons.length > 0) {
+        lines.push(["# Low Confidence Reasons"]);
+        lines.push(["reason"]);
+        for (const r of report.low_confidence_reasons) {
+            lines.push([r]);
+        }
+        lines.push([]);
+    }
+
+    // Section 7: Scouting notes
+    if (report.watchlist_note || report.shortlist_note) {
+        lines.push(["# Scouting Notes"]);
+        lines.push(["type", "note"]);
+        if (report.watchlist_note) lines.push(["watchlist", report.watchlist_note]);
+        if (report.shortlist_note) lines.push(["shortlist", report.shortlist_note]);
+        lines.push([]);
+    }
+
+    // Section 8: Season history
+    if (report.seasons_history.length > 0) {
+        lines.push(["# Season History"]);
+        lines.push(["season", "team", "league", "position_group", "score", "minutes"]);
+        for (const s of report.seasons_history) {
+            lines.push([s.season, s.team, s.league, s.position_group, s.score ?? "", s.minutes ?? ""]);
+        }
+        lines.push([]);
+    }
+
+    lines.push(["# Exported", report.exported_at, "ScoutFootball v" + report.app_version]);
+
+    const csv = lines.map(r => r.map(csvCell).join(",")).join("\n");
     const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `${(player.name || "player").replace(/[^a-zA-Z0-9\u4e00-\u9fff_-]/g, "_")}_profile.csv`;
+    link.download = `${safeName}_scouting_report.csv`;
     link.click();
     URL.revokeObjectURL(url);
+}
+
+function exportPlayerScoutingReportJSON(player, profile, detail) {
+    const report = _buildScoutingReport(player, profile, detail);
+    const json = JSON.stringify(report, null, 2);
+    const blob = new Blob([json], { type: "application/json;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${(player.name || "player").replace(/[^a-zA-Z0-9\u4e00-\u9fff_-]/g, "_")}_scouting_report.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+}
+
+function exportPlayerProfileCSV(player, profile, detailScore, detailPosition, detailMinutes, detailMatches, detailConfidence, detailLeague) {
+    // Legacy entry point: delegates to the new report exporter.
+    exportPlayerScoutingReportCSV(player, profile, {
+        score: detailScore, position: detailPosition, minutes: detailMinutes,
+        matches: detailMatches, confidence: detailConfidence, league: detailLeague,
+    });
 }
 
 function getChart(id) {
