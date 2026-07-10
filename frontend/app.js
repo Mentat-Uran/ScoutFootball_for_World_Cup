@@ -2291,10 +2291,76 @@ async function renderCompare() {
         if (inputA) inputA.addEventListener("keydown", handler);
         if (inputB) inputB.addEventListener("keydown", handler);
     }
+
+    // Wire the CSV export button
+    const exportBtn = document.getElementById("btn-compare-export-csv");
+    if (exportBtn && !exportBtn.dataset.bound) {
+        exportBtn.dataset.bound = "1";
+        exportBtn.addEventListener("click", exportPlayerComparisonCSV);
+    }
+}
+
+function exportPlayerComparisonCSV() {
+    const data = appState.lastCompareData;
+    if (!data || data.error) return;
+    const nameA = data.player_a ? data.player_a.name : "A";
+    const nameB = data.player_b ? data.player_b.name : "B";
+    const safeA = (nameA || "player_a").replace(/[^a-zA-Z0-9\u4e00-\u9fff_-]/g, "_");
+    const safeB = (nameB || "player_b").replace(/[^a-zA-Z0-9\u4e00-\u9fff_-]/g, "_");
+    const lines = [];
+
+    // Section 1: Player profiles
+    lines.push(["# Player Comparison"]);
+    lines.push(["field", "player_a", "player_b"]);
+    const pa = data.player_a || {};
+    const pb = data.player_b || {};
+    for (const key of ["name", "team", "position_group", "position", "season", "league", "rating", "minutes"]) {
+        lines.push([key, pa[key] ?? "", pb[key] ?? ""]);
+    }
+    lines.push([]);
+
+    // Section 2: Radar values
+    lines.push(["# Radar (0-100 percentile)"]);
+    lines.push(["dimension", nameA, nameB]);
+    const labels = data.radar_labels || [];
+    const radarA = data.radar_a || [];
+    const radarB = data.radar_b || [];
+    for (let i = 0; i < labels.length; i++) {
+        lines.push([labels[i], radarA[i] ?? "", radarB[i] ?? ""]);
+    }
+    lines.push([]);
+
+    // Section 3: Stats comparison
+    lines.push(["# Stats Comparison"]);
+    lines.push(["metric", nameA, nameB, "diff"]);
+    for (const s of (data.stats_comparison || [])) {
+        lines.push([s.metric, s.player_a ?? "", s.player_b ?? "", s.diff ?? ""]);
+    }
+    lines.push([]);
+
+    // Section 4: Position percentile comparison
+    lines.push(["# Position Percentile Comparison"]);
+    lines.push(["dimension", nameA, nameB, "diff"]);
+    for (const p of (data.position_percentile_comparison || [])) {
+        lines.push([p.dimension, p.player_a ?? "", p.player_b ?? "", p.diff ?? ""]);
+    }
+    lines.push([]);
+
+    lines.push(["# Exported", new Date().toISOString(), "ScoutFootball v" + APP_VERSION]);
+
+    const csv = lines.map(r => r.map(csvCell).join(",")).join("\n");
+    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `compare_${safeA}_vs_${safeB}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
 }
 
 async function _renderCompareResult(a, b) {
     const data = await fetchPlayerComparison(a, b);
+    appState.lastCompareData = data;
     const wrap = document.getElementById("compare-result-wrap");
     const pctPanel = document.getElementById("compare-pct-panel");
 

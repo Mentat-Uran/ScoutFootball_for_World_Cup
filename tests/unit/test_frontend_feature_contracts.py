@@ -153,6 +153,16 @@ def test_player_position_percentiles_field_name_matches_api() -> None:
     assert "overall_score" in app_js
 
 
+def test_player_comparison_export_button_and_function_exist() -> None:
+    html = _read(FRONTEND / "index.html")
+    app_js = _read(FRONTEND / "app.js")
+
+    assert 'id="btn-compare-export-csv"' in html
+    assert "exportPlayerComparisonCSV" in app_js
+    assert "lastCompareData" in app_js
+    assert "exportPlayerComparisonCSV" in app_js
+
+
 def test_form_trend_rendering_is_present() -> None:
     app_js = _read(FRONTEND / "app.js")
 
