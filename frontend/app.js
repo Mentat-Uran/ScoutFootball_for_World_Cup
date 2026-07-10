@@ -1827,6 +1827,80 @@ function _renderFormColumn(teamName, formSummary, formList) {
     return html;
 }
 
+function _trendLabel(label) {
+    const labels = {
+        improving: "上升",
+        declining: "下滑",
+        stable: "平稳",
+        insufficient: "样本不足",
+        no_data: "无数据",
+    };
+    return labels[label] || label;
+}
+
+function _trendLabelClass(label) {
+    if (label === "improving") return "trend-up";
+    if (label === "declining") return "trend-down";
+    return "trend-flat";
+}
+
+function _renderFormTrendCard(teamName, trend) {
+    if (!trend || !trend.matches) {
+        return `<div class="h2h-form-card"><div class="h2h-form-team">${teamName}</div><p class="h2h-message h2h-message-inline">无近期趋势数据</p></div>`;
+    }
+    const rating = Number(trend.form_rating) || 0;
+    const momentum = Number(trend.momentum) || 0;
+    const ppg = Number(trend.ppg) || 0;
+    const gfPg = Number(trend.gf_per_game) || 0;
+    const gaPg = Number(trend.ga_per_game) || 0;
+    const cleanSheets = Number(trend.clean_sheets) || 0;
+    const failedToScore = Number(trend.failed_to_score) || 0;
+    const label = trend.trend_label || "no_data";
+    const pointsTrend = Array.isArray(trend.points_trend) ? trend.points_trend : [];
+
+    let html = `<div class="h2h-form-card">`;
+    html += `<div class="h2h-form-team">${teamName}</div>`;
+
+    // Form rating bar (0-100)
+    const ratingColor = rating >= 60 ? "var(--accent,#5fd4a8)" : rating >= 35 ? "var(--warn,#f0c869)" : "var(--danger,#f0877a)";
+    html += `<div class="trend-rating">`;
+    html += `<div class="trend-rating-bar" role="img" aria-label="状态评分 ${rating.toFixed(0)}">`;
+    html += `<span style="width:${Math.max(2, Math.min(100, rating))}%;background:${ratingColor}"></span>`;
+    html += `</div>`;
+    html += `<span class="trend-rating-value">${rating.toFixed(0)}</span>`;
+    html += `</div>`;
+
+    // Trend label badge
+    html += `<div class="trend-label-row"><span class="trend-badge ${_trendLabelClass(label)}">${_trendLabel(label)}</span>`;
+    html += `<span class="trend-momentum">势头 ${momentum >= 0 ? "+" : ""}${momentum.toFixed(2)}</span></div>`;
+
+    // Key metrics
+    html += `<div class="trend-metrics">`;
+    html += `<span>场均 ${ppg.toFixed(2)} 分</span>`;
+    html += `<span>进 ${gfPg.toFixed(2)} / 失 ${gaPg.toFixed(2)}</span>`;
+    html += `<span>零封 ${cleanSheets} · 未进球 ${failedToScore}</span>`;
+    html += `</div>`;
+
+    // Sparkline (cumulative points, oldest -> newest)
+    if (pointsTrend.length >= 2) {
+        const max = pointsTrend[pointsTrend.length - 1] || 1;
+        const w = 100, h = 24;
+        const step = w / (pointsTrend.length - 1);
+        let path = `M0,${h}`;
+        for (let i = 0; i < pointsTrend.length; i++) {
+            const x = i * step;
+            const y = h - (pointsTrend[i] / max) * h;
+            path += ` L${x.toFixed(1)},${y.toFixed(1)}`;
+        }
+        html += `<svg class="trend-sparkline" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-label="积分趋势">`;
+        html += `<path d="${path}" fill="none" stroke="${ratingColor}" stroke-width="1.5"/>`;
+        html += `</svg>`;
+    }
+
+    html += `</div>`;
+    return html;
+}
+
 async function renderHeadToHead(home, away) {
     const container = document.getElementById("match-h2h-content");
     const statusPill = document.getElementById("h2h-status");
@@ -1924,7 +1998,18 @@ async function renderHeadToHead(home, away) {
     html += _renderFormColumn(awayName, awayFormSummary, awayForm);
     html += `</div>`;
 
-    // 4. Data coverage note
+    // 4. Form trend comparison (momentum, rating, goals trend)
+    const homeTrend = data.home_form_trend || null;
+    const awayTrend = data.away_form_trend || null;
+    if (homeTrend || awayTrend) {
+        html += `<div class="h2h-eyebrow">近期趋势</div>`;
+        html += `<div class="h2h-form-grid">`;
+        html += _renderFormTrendCard(homeName, homeTrend);
+        html += _renderFormTrendCard(awayName, awayTrend);
+        html += `</div>`;
+    }
+
+    // 5. Data coverage note
     const coverage = data.data_coverage || {};
     const seasons = Array.isArray(coverage.seasons_covered) ? coverage.seasons_covered : [];
     const source = escapeHtml(String(coverage.source || "Football-Data"));

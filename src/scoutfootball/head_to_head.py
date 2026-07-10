@@ -238,6 +238,109 @@ def compute_team_form(team: str, limit: int = 10) -> tuple[list[dict], dict]:
     return form_list, summary
 
 
+def compute_form_trend(form_list: list[dict]) -> dict:
+    """Compute momentum, trend and rating metrics from a team's recent form list.
+
+    The form list is expected to be ordered newest-first (as produced by
+    ``compute_team_form``). Trends split the window into a recent half and an
+    older half to surface momentum. Returns an empty-state dict when no form
+    is available so callers can render a consistent shape.
+    """
+    empty = {
+        "matches": 0,
+        "ppg": 0.0,
+        "ppg_recent": 0.0,
+        "ppg_older": 0.0,
+        "momentum": 0.0,
+        "gf_per_game": 0.0,
+        "ga_per_game": 0.0,
+        "gf_trend": 0.0,
+        "ga_trend": 0.0,
+        "clean_sheets": 0,
+        "failed_to_score": 0,
+        "form_rating": 0.0,
+        "trend_label": "no_data",
+        "points_trend": [],
+    }
+    if not form_list:
+        return empty
+
+    matches = len(form_list)
+    points_map = {"W": 3, "D": 1, "L": 0}
+
+    def _half_stats(subset: list[dict]) -> tuple[float, float, float]:
+        if not subset:
+            return 0.0, 0.0, 0.0
+        pts = sum(points_map.get(m.get("result"), 0) for m in subset)
+        gf = sum(int(m.get("goals_for", 0)) for m in subset)
+        ga = sum(int(m.get("goals_against", 0)) for m in subset)
+        n = len(subset)
+        return pts / n, gf / n, ga / n
+
+    total_points = sum(points_map.get(m.get("result"), 0) for m in form_list)
+    total_gf = sum(int(m.get("goals_for", 0)) for m in form_list)
+    total_ga = sum(int(m.get("goals_against", 0)) for m in form_list)
+    ppg = total_points / matches
+    gf_per_game = total_gf / matches
+    ga_per_game = total_ga / matches
+
+    half = matches // 2
+    if half == 0:
+        # Single match: treat the whole window as the recent half.
+        recent = form_list
+        older: list[dict] = []
+    else:
+        recent = form_list[:half]
+        older = form_list[half:]
+    ppg_recent, gf_recent, ga_recent = _half_stats(recent)
+    ppg_older, gf_older, ga_older = _half_stats(older)
+
+    momentum = round(ppg_recent - ppg_older, 3) if older else round(ppg_recent - ppg, 3)
+    gf_trend = round(gf_recent - gf_older, 3) if older else 0.0
+    ga_trend = round(ga_recent - ga_older, 3) if older else 0.0
+
+    clean_sheets = sum(1 for m in form_list if int(m.get("goals_against", 0)) == 0)
+    failed_to_score = sum(1 for m in form_list if int(m.get("goals_for", 0)) == 0)
+
+    # Form rating: 0-100. Base from ppg (max 3), momentum adds or subtracts.
+    base_rating = (ppg / 3.0) * 100.0
+    momentum_adj = max(-25.0, min(25.0, momentum / 3.0 * 100.0))
+    form_rating = max(0.0, min(100.0, round(base_rating * 0.7 + (base_rating + momentum_adj) * 0.3, 1)))
+
+    if matches < 3:
+        trend_label = "insufficient"
+    elif momentum >= 0.6:
+        trend_label = "improving"
+    elif momentum <= -0.6:
+        trend_label = "declining"
+    else:
+        trend_label = "stable"
+
+    # Cumulative points for sparkline (oldest -> newest for left-to-right reading).
+    points_trend: list[int] = []
+    cumulative = 0
+    for match in reversed(form_list):
+        cumulative += points_map.get(match.get("result"), 0)
+        points_trend.append(cumulative)
+
+    return {
+        "matches": matches,
+        "ppg": round(ppg, 3),
+        "ppg_recent": round(ppg_recent, 3),
+        "ppg_older": round(ppg_older, 3),
+        "momentum": momentum,
+        "gf_per_game": round(gf_per_game, 3),
+        "ga_per_game": round(ga_per_game, 3),
+        "gf_trend": gf_trend,
+        "ga_trend": ga_trend,
+        "clean_sheets": clean_sheets,
+        "failed_to_score": failed_to_score,
+        "form_rating": form_rating,
+        "trend_label": trend_label,
+        "points_trend": points_trend,
+    }
+
+
 def compute_h2h_summary(home_team: str, away_team: str) -> dict:
     """Aggregate head-to-head summary from the home_team's perspective."""
     empty = {
@@ -305,6 +408,8 @@ def get_head_to_head(
         h2h = compute_head_to_head(home_team, away_team, limit=limit)
         home_form, home_form_summary = compute_team_form(home_team, limit=form_limit)
         away_form, away_form_summary = compute_team_form(away_team, limit=form_limit)
+        home_form_trend = compute_form_trend(home_form)
+        away_form_trend = compute_form_trend(away_form)
         summary = compute_h2h_summary(home_team, away_team)
 
         df = load_match_results()
@@ -327,6 +432,8 @@ def get_head_to_head(
             "wins": 0, "draws": 0, "losses": 0,
             "goals_for": 0, "goals_against": 0, "points": 0, "streak": [],
         }
+        home_form_trend = compute_form_trend([])
+        away_form_trend = compute_form_trend([])
         summary = {
             "total_meetings": 0, "home_wins": 0, "draws": 0, "away_wins": 0,
             "home_goals_avg": 0.0, "away_goals_avg": 0.0, "last_meeting_date": None,
@@ -340,8 +447,10 @@ def get_head_to_head(
         "head_to_head": h2h,
         "home_form": home_form,
         "home_form_summary": home_form_summary,
+        "home_form_trend": home_form_trend,
         "away_form": away_form,
         "away_form_summary": away_form_summary,
+        "away_form_trend": away_form_trend,
         "summary": summary,
         "data_coverage": {
             "seasons_covered": seasons_covered,

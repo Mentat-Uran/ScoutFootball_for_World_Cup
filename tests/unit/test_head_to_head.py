@@ -17,6 +17,7 @@ from scoutfootball.app.data_loader import _ttl_cache
 from scoutfootball.entities.normalize import normalize_team_name
 from scoutfootball.head_to_head import (
     _MATCH_RESULTS_CACHE_KEY,
+    compute_form_trend,
     compute_h2h_summary,
     compute_head_to_head,
     compute_team_form,
@@ -204,6 +205,104 @@ class TestComputeTeamForm:
 
 
 # ---------------------------------------------------------------------------
+# compute_form_trend
+# ---------------------------------------------------------------------------
+
+_TREND_KEYS = {
+    "matches",
+    "ppg",
+    "ppg_recent",
+    "ppg_older",
+    "momentum",
+    "gf_per_game",
+    "ga_per_game",
+    "gf_trend",
+    "ga_trend",
+    "clean_sheets",
+    "failed_to_score",
+    "form_rating",
+    "trend_label",
+    "points_trend",
+}
+
+
+class TestComputeFormTrend:
+    """compute_form_trend computes momentum and rating from a form list."""
+
+    def test_empty_form_returns_no_data_state(self) -> None:
+        trend = compute_form_trend([])
+        assert trend["matches"] == 0
+        assert trend["trend_label"] == "no_data"
+        assert trend["form_rating"] == 0.0
+        assert trend["points_trend"] == []
+
+    def test_all_wins_yields_high_rating_and_improving_when_recent_better(self) -> None:
+        form = [
+            {"result": "W", "goals_for": 2, "goals_against": 0},
+            {"result": "W", "goals_for": 3, "goals_against": 1},
+            {"result": "W", "goals_for": 1, "goals_against": 0},
+            {"result": "W", "goals_for": 2, "goals_against": 0},
+        ]
+        trend = compute_form_trend(form)
+        assert _TREND_KEYS.issubset(trend.keys())
+        assert trend["matches"] == 4
+        assert trend["ppg"] == 3.0
+        assert trend["clean_sheets"] == 3
+        assert trend["failed_to_score"] == 0
+        assert trend["form_rating"] > 80
+        assert trend["trend_label"] in {"stable", "improving", "declining", "insufficient"}
+
+    def test_declining_team_has_negative_momentum(self) -> None:
+        # Newest-first: recent half = first 3 (all losses), older half = last 3 (all wins)
+        form = [
+            {"result": "L", "goals_for": 0, "goals_against": 2},
+            {"result": "L", "goals_for": 1, "goals_against": 3},
+            {"result": "L", "goals_for": 0, "goals_against": 1},
+            {"result": "W", "goals_for": 3, "goals_against": 1},
+            {"result": "W", "goals_for": 2, "goals_against": 0},
+            {"result": "W", "goals_for": 1, "goals_against": 0},
+        ]
+        trend = compute_form_trend(form)
+        assert trend["momentum"] < 0
+        assert trend["ppg_recent"] < trend["ppg_older"]
+        assert trend["trend_label"] == "declining"
+        assert trend["form_rating"] < 50
+
+    def test_points_trend_is_cumulative_oldest_to_newest(self) -> None:
+        form = [
+            {"result": "W", "goals_for": 1, "goals_against": 0},
+            {"result": "D", "goals_for": 1, "goals_against": 1},
+            {"result": "L", "goals_for": 0, "goals_against": 2},
+        ]
+        trend = compute_form_trend(form)
+        # Reversed (oldest first): L, D, W -> 0, 1, 4
+        assert trend["points_trend"] == [0, 1, 4]
+
+    def test_rating_is_between_0_and_100(self) -> None:
+        form = [{"result": r, "goals_for": 1, "goals_against": 1} for _ in range(10) for r in ["D"]]
+        trend = compute_form_trend(form)
+        assert 0.0 <= trend["form_rating"] <= 100.0
+
+    def test_json_serializable_with_real_data(self) -> None:
+        form_list, _ = compute_team_form("Arsenal", limit=10)
+        trend = compute_form_trend(form_list)
+        json.dumps(trend)
+
+    def test_real_h2h_response_includes_trend_fields(self) -> None:
+        result = get_head_to_head("Arsenal", "Chelsea", limit=3, form_limit=5)
+        assert "home_form_trend" in result
+        assert "away_form_trend" in result
+        home_trend = result["home_form_trend"]
+        assert _TREND_KEYS.issubset(home_trend.keys())
+        assert home_trend["matches"] == len(result["home_form"])
+
+    def test_empty_response_has_zeroed_trend(self) -> None:
+        result = get_head_to_head("NoSuchTeamA", "NoSuchTeamB")
+        assert result["home_form_trend"]["matches"] == 0
+        assert result["away_form_trend"]["trend_label"] == "no_data"
+
+
+# ---------------------------------------------------------------------------
 # compute_h2h_summary
 # ---------------------------------------------------------------------------
 
@@ -256,8 +355,10 @@ _TOP_LEVEL_KEYS = {
     "head_to_head",
     "home_form",
     "home_form_summary",
+    "home_form_trend",
     "away_form",
     "away_form_summary",
+    "away_form_trend",
     "summary",
     "data_coverage",
 }

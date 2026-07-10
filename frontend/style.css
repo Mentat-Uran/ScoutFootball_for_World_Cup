@@ -1516,6 +1516,19 @@ tbody button {
 .h2h-venue { opacity: 0.7; }
 .h2h-coverage { padding-top: 0.5rem; border-top: 1px solid var(--glass-border); text-align: center; }
 
+.trend-rating { display: flex; align-items: center; gap: 0.4rem; margin-bottom: 0.35rem; }
+.trend-rating-bar { flex: 1; height: 6px; border-radius: 3px; background: var(--glass-border); overflow: hidden; }
+.trend-rating-bar span { display: block; height: 100%; border-radius: 3px; }
+.trend-rating-value { flex: 0 0 auto; font-size: 0.72rem; font-weight: 650; min-width: 2rem; text-align: right; }
+.trend-label-row { display: flex; align-items: center; justify-content: space-between; gap: 0.4rem; margin-bottom: 0.3rem; }
+.trend-badge { font-size: 0.66rem; padding: 1px 6px; border-radius: 4px; font-weight: 600; }
+.trend-badge.trend-up { background: rgba(95,212,168,0.18); color: var(--accent,#5fd4a8); }
+.trend-badge.trend-down { background: rgba(240,135,122,0.18); color: var(--danger,#f0877a); }
+.trend-badge.trend-flat { background: rgba(240,200,105,0.18); color: var(--warn,#f0c869); }
+.trend-momentum { font-size: 0.68rem; opacity: 0.8; }
+.trend-metrics { display: flex; flex-wrap: wrap; gap: 0.3rem 0.6rem; font-size: 0.68rem; opacity: 0.85; margin-bottom: 0.3rem; }
+.trend-sparkline { width: 100%; height: 24px; display: block; }
+
 @media (max-width: 760px) {
     .h2h-form-grid { grid-template-columns: 1fr; }
     .h2h-segment { font-size: 0.68rem; }
