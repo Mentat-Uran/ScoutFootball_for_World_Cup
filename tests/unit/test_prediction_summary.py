@@ -115,11 +115,11 @@ def test_match_prediction_uses_detailed_calibration_metrics(tmp_path) -> None:
         },
     ]).to_parquet(artifact_dir / "dc_calibration_detail.parquet", index=False)
 
-    get_prediction_calibration.cache_clear()
+    get_prediction_calibration(force_refresh=True)
     with patch("scoutfootball.api._settings") as mock_settings:
         mock_settings.return_value.data_root = tmp_path
         calibration = _prediction_calibration()
-    get_prediction_calibration.cache_clear()
+    get_prediction_calibration(force_refresh=True)
 
     assert calibration["brier"] is not None
     assert calibration["rps"] is not None

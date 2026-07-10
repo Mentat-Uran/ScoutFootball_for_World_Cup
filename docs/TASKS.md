@@ -81,6 +81,15 @@ ScoutFootball 的长期形态是本地优先的足球数据研究平台，而不
 
 ## 已完成
 
+- [x] **球队实力分析面板**（2026-07-10）：新增 `GET /teams/strength` API，按分钟加权聚合球员评分到球队级别，返回整体评分、位置组（GK/DEF/MID/ATT）实力分布、核心球员和置信度分布；新增前端"球队"视图含排名表、球队详情卡和位置组对比堆叠柱状图；静态导出脚本同步生成 `team_strength.json`。
+- [x] **修复 scouting queue 重复计算**（2026-07-10）：`get_review_queue`/`get_watchlist`/`get_shortlist` 原各自独立调用 `build_scouting_queues`，现通过 `_get_scouting_queues()` 缓存复用。
+- [x] **修复 api_server.py Path 导入位置**（2026-07-10）：`Path` 原在文件底部局部导入但被上部代码使用，现移至文件顶部。
+- [x] **增加 MP4 导出上传大小限制**（2026-07-10）：`tactical-board/export/mp4` 原无上传大小限制，现限制 50MB。
+- [x] **修复 pipeline.py DC 校准死代码**（2026-07-10）：原 `if hg < ...: pass  # Could track log-loss here` 占位代码，现实现实际比分 log-loss 计算并写入校准报告。
+- [x] **球员对比工具**（2026-07-10）：新增 `GET /players/compare` API，支持双球员雷达叠加、位置百分位对比和关键指标差异表；新增前端"对比"视图含搜索输入、ECharts 雷达图和指标对比表。
+- [x] **修复 VAEP player_id → player_name 映射**（2026-07-10）：从 xT 数据和 events_all.parquet 构建 player_id → player_name 映射，回填 VAEP 数据中缺失的球员名称，使动作价值页能显示球员名而非原始 ID。
+- [x] **修复校准缓存失效问题**（2026-07-10）：`get_prediction_calibration()` 原用 `@lru_cache(maxsize=1)` 永久缓存，模型重新训练后返回过期数据；现改为 5 分钟 TTL 缓存，支持 `force_refresh` 参数。
+- [x] **球队对比工具**（2026-07-10）：新增 `GET /teams/compare` API，支持双球队位置组雷达叠加、位置组差异表和核心球员对比；前端"球队"视图新增球队对比输入区和雷达图。
 - [x] 五类核心数据源接入：FBref、Football-Data、Understat、StatsBomb Open Data、Club Elo。
 - [x] 本地缓存扩展到 10 赛季级别：Football-Data 原始 CSV 合计 68,953 行，Understat 为 31,902 个球员赛季行；当前活动 `combined_results.parquet` 为 5,330 行，需重建 10 赛季合并 Parquet。
 - [x] FBref 5 赛季标准、射门、misc 表均为 14,356 行。

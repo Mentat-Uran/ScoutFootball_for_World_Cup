@@ -3,8 +3,10 @@ const i18n = {
     zh: {
         nav_overview: "总览",
         nav_players: "球员",
+        nav_compare: "对比",
         nav_value: "身价",
         nav_matches: "预测",
+        nav_teams: "球队",
         nav_scouting: "球探",
         nav_actions: "动作价值",
         nav_reports: "报告",
@@ -40,6 +42,18 @@ const i18n = {
         th_season: "赛季",
         value_kicker: "OOF residual",
         value_title: "实际身价 vs 预测身价",
+        compare_kicker: "球员对比",
+        compare_title: "双球员雷达叠加与指标差异",
+        compare_note: "选择两名球员进行位置百分位、雷达维度和关键统计的并排对比。",
+        compare_select: "选择球员",
+        compare_player_a: "球员 A",
+        compare_player_b: "球员 B",
+        compare_button: "对比",
+        compare_radar_title: "雷达图对比",
+        compare_stats_title: "关键指标",
+        compare_pct_title: "位置百分位对比",
+        compare_col_metric: "指标",
+        compare_col_dimension: "维度",
         value_rank: "偏离榜",
         undervalued: "低估",
         overvalued: "高估",
@@ -53,6 +67,27 @@ const i18n = {
         scouting_kicker: "本地优先决策台",
         scouting_title: "复核、观察与候选闭环",
         scouting_boundary: "服务端队列只读；复核状态、备注和球员页手动选择保存在当前浏览器。",
+        teams_kicker: "球队实力分析",
+        teams_title: "球队评分聚合与位置组实力",
+        teams_note: "基于球员评分的分钟加权聚合，展示球队整体实力、位置组分布和核心球员。",
+        teams_metric_count: "球队数",
+        teams_metric_avg: "平均评分",
+        teams_metric_top: "最高评分",
+        teams_table_title: "球队排名",
+        teams_col_team: "球队",
+        teams_col_league: "联赛",
+        teams_col_rating: "评分",
+        teams_col_squad: "阵容",
+        teams_detail_title: "球队详情",
+        teams_detail_placeholder: "选择一支球队查看详情",
+        teams_chart_title: "位置组实力对比",
+        teams_compare_title: "球队对比",
+        teams_compare_a: "球队 A",
+        teams_compare_b: "球队 B",
+        teams_compare_button: "对比",
+        teams_compare_radar: "位置组雷达",
+        teams_compare_pos: "位置组对比",
+        teams_compare_col_group: "组",
         scouting_metric_review: "待复核",
         scouting_metric_short: "候选",
         scouting_search: "搜索球员、球队或原因",
@@ -214,8 +249,10 @@ const i18n = {
     en: {
         nav_overview: "Overview",
         nav_players: "Players",
+        nav_compare: "Compare",
         nav_value: "Value",
         nav_matches: "Prediction",
+        nav_teams: "Teams",
         nav_scouting: "Scouting",
         nav_actions: "Action Value",
         nav_reports: "Reports",
@@ -251,6 +288,18 @@ const i18n = {
         th_season: "Season",
         value_kicker: "OOF residual",
         value_title: "Actual value vs predicted value",
+        compare_kicker: "Player Comparison",
+        compare_title: "Dual radar overlay and metric diff",
+        compare_note: "Select two players for side-by-side position percentile, radar dimension and key stat comparison.",
+        compare_select: "Select Players",
+        compare_player_a: "Player A",
+        compare_player_b: "Player B",
+        compare_button: "Compare",
+        compare_radar_title: "Radar Comparison",
+        compare_stats_title: "Key Metrics",
+        compare_pct_title: "Position Percentile Comparison",
+        compare_col_metric: "Metric",
+        compare_col_dimension: "Dimension",
         value_rank: "Deviation board",
         undervalued: "Undervalued",
         overvalued: "Overvalued",
@@ -264,6 +313,27 @@ const i18n = {
         scouting_kicker: "Local-first decision desk",
         scouting_title: "Review, monitor, decide",
         scouting_boundary: "Server queues are read-only; review states, notes, and manual player selections stay in this browser.",
+        teams_kicker: "Team Strength Analysis",
+        teams_title: "Aggregated Ratings & Position Group Strength",
+        teams_note: "Minutes-weighted aggregation of player ratings, showing overall team strength, position group distribution and key players.",
+        teams_metric_count: "Teams",
+        teams_metric_avg: "Avg Rating",
+        teams_metric_top: "Top Rating",
+        teams_table_title: "Team Rankings",
+        teams_col_team: "Team",
+        teams_col_league: "League",
+        teams_col_rating: "Rating",
+        teams_col_squad: "Squad",
+        teams_detail_title: "Team Detail",
+        teams_detail_placeholder: "Select a team to view details",
+        teams_chart_title: "Position Group Strength Comparison",
+        teams_compare_title: "Team Comparison",
+        teams_compare_a: "Team A",
+        teams_compare_b: "Team B",
+        teams_compare_button: "Compare",
+        teams_compare_radar: "Position Group Radar",
+        teams_compare_pos: "Position Group Comparison",
+        teams_compare_col_group: "Group",
         scouting_metric_review: "To review",
         scouting_metric_short: "Shortlist",
         scouting_search: "Search player, team, or reason",
@@ -456,6 +526,8 @@ function _staticUrlFor(apiPath) {
         "/health": "/data/health.json",
         "/artifacts": "/data/artifacts.json",
         "/teams": "/data/teams.json",
+        "/teams/strength": "/data/team_strength.json",
+        "/teams/compare": null,
         "/ratings": "/data/ratings.json",
         "/ratings/meta": "/data/ratings_meta.json",
         "/ratings/snapshots": "/data/ratings.json",
@@ -581,6 +653,7 @@ let modelRuns = { count: 0, runs: [] };
 let watchlistData = [];
 let shortlistData = [];
 let actionValueSummary = { status: "no_data", players: [], metrics: {} };
+let teamStrengthData = { count: 0, teams: [] };
 let dataLoadErrors = new Set(); // tracks which data sources failed to load
 
 async function fetchRatings(position, league) {
@@ -675,6 +748,19 @@ async function fetchTeams() {
     } catch (err) {
         console.warn("Failed to fetch teams:", err);
         return [];
+    }
+}
+
+async function fetchTeamStrength(league) {
+    const params = new URLSearchParams();
+    if (league) params.set("league", league);
+    params.set("limit", "200");
+    try {
+        const data = await fetchJson("/teams/strength", { params });
+        return data;
+    } catch (err) {
+        console.warn("Failed to fetch team strength:", err);
+        return { count: 0, teams: [] };
     }
 }
 
@@ -1437,6 +1523,155 @@ async function fetchValueReport() {
     } catch (err) {
         console.warn("Failed to fetch value report:", err);
         return [];
+    }
+}
+
+async function fetchPlayerComparison(a, b) {
+    try {
+        const data = await fetchJson(`/players/compare?a=${encodeURIComponent(a)}&b=${encodeURIComponent(b)}`);
+        return data;
+    } catch (err) {
+        console.warn("Failed to fetch comparison:", err);
+        return { error: "Failed to load comparison" };
+    }
+}
+
+async function renderCompare() {
+    const btn = document.getElementById("compare-btn");
+    const inputA = document.getElementById("compare-input-a");
+    const inputB = document.getElementById("compare-input-b");
+
+    if (btn && !btn.dataset.bound) {
+        btn.dataset.bound = "1";
+        btn.addEventListener("click", async () => {
+            const a = inputA.value.trim();
+            const b = inputB.value.trim();
+            if (!a || !b) return;
+            btn.disabled = true;
+            btn.textContent = "...";
+            try {
+                await _renderCompareResult(a, b);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = t("compare_button");
+            }
+        });
+        // Allow Enter key
+        const handler = (e) => { if (e.key === "Enter") btn.click(); };
+        if (inputA) inputA.addEventListener("keydown", handler);
+        if (inputB) inputB.addEventListener("keydown", handler);
+    }
+}
+
+async function _renderCompareResult(a, b) {
+    const data = await fetchPlayerComparison(a, b);
+    const wrap = document.getElementById("compare-result-wrap");
+    const pctPanel = document.getElementById("compare-pct-panel");
+
+    if (data.error) {
+        if (wrap) wrap.style.display = "none";
+        if (pctPanel) pctPanel.style.display = "none";
+        alert(data.error);
+        return;
+    }
+
+    if (wrap) wrap.style.display = "flex";
+
+    // Update column headers with player names
+    const colA = document.getElementById("compare-col-a");
+    const colB = document.getElementById("compare-col-b");
+    const pctColA = document.getElementById("compare-pct-col-a");
+    const pctColB = document.getElementById("compare-pct-col-b");
+    const nameA = data.player_a ? data.player_a.name : a;
+    const nameB = data.player_b ? data.player_b.name : b;
+    if (colA) colA.textContent = nameA;
+    if (colB) colB.textContent = nameB;
+    if (pctColA) pctColA.textContent = nameA;
+    if (pctColB) pctColB.textContent = nameB;
+
+    // Position pill
+    const posPill = document.getElementById("compare-position-pill");
+    if (posPill) {
+        const posA = data.player_a ? data.player_a.position_group : "";
+        const posB = data.player_b ? data.player_b.position_group : "";
+        posPill.textContent = posA === posB ? posA : `${posA} vs ${posB}`;
+    }
+
+    // Render stats table
+    const statsBody = document.getElementById("compare-stats-body");
+    if (statsBody) {
+        statsBody.innerHTML = (data.stats_comparison || []).map(s => {
+            const valA = s.player_a !== null && s.player_a !== undefined ? s.player_a : "—";
+            const valB = s.player_b !== null && s.player_b !== undefined ? s.player_b : "—";
+            const diff = s.diff !== null && s.diff !== undefined ? (s.diff > 0 ? `+${s.diff}` : s.diff) : "—";
+            const cls = s.diff > 0 ? "status-high" : s.diff < 0 ? "status-low" : "";
+            return `<tr>
+                <td>${escapeHtml(s.metric)}</td>
+                <td>${escapeHtml(String(valA))}</td>
+                <td>${escapeHtml(String(valB))}</td>
+                <td><span class="status-pill ${cls}">${diff}</span></td>
+            </tr>`;
+        }).join("");
+    }
+
+    // Render percentile table
+    const pctBody = document.getElementById("compare-pct-body");
+    if (pctBody) {
+        const pcts = data.position_percentile_comparison || [];
+        if (pcts.length > 0) {
+            if (pctPanel) pctPanel.style.display = "block";
+            // Fix column headers
+            if (pctColA) pctColA.textContent = nameA;
+            if (pctColB) pctColB.textContent = nameB;
+            pctBody.innerHTML = pcts.map(p => {
+                const valA = p.player_a !== null && p.player_a !== undefined ? p.player_a : "—";
+                const valB = p.player_b !== null && p.player_b !== undefined ? p.player_b : "—";
+                const diff = p.diff !== null && p.diff !== undefined ? (p.diff > 0 ? `+${p.diff}` : p.diff) : "—";
+                const cls = p.diff > 0 ? "status-high" : p.diff < 0 ? "status-low" : "";
+                return `<tr>
+                    <td>${escapeHtml(p.dimension)}</td>
+                    <td>${escapeHtml(String(valA))}</td>
+                    <td>${escapeHtml(String(valB))}</td>
+                    <td><span class="status-pill ${cls}">${diff}</span></td>
+                </tr>`;
+            }).join("");
+        } else {
+            if (pctPanel) pctPanel.style.display = "none";
+        }
+    }
+
+    // Render radar chart
+    const chartEl = document.getElementById("compare-radar-chart");
+    if (chartEl && typeof echarts !== "undefined") {
+        if (appState.charts.compare) appState.charts.compare.dispose();
+        const chart = echarts.init(chartEl);
+        appState.charts.compare = chart;
+
+        chart.setOption({
+            tooltip: { trigger: "item" },
+            legend: { data: [nameA, nameB], bottom: 0 },
+            radar: {
+                indicator: (data.radar_labels || []).map(l => ({ name: l, max: 100 })),
+                shape: "polygon",
+            },
+            series: [{
+                type: "radar",
+                data: [
+                    {
+                        value: data.radar_a || [],
+                        name: nameA,
+                        areaStyle: { opacity: 0.2 },
+                        lineStyle: { width: 2 },
+                    },
+                    {
+                        value: data.radar_b || [],
+                        name: nameB,
+                        areaStyle: { opacity: 0.2 },
+                        lineStyle: { width: 2 },
+                    },
+                ],
+            }],
+        });
     }
 }
 
@@ -2616,6 +2851,298 @@ function _renderErrorCases(errorCases) {
     <div style="font-size:0.75rem;line-height:1.5">${parts.join("")}</div>`;
 }
 
+function _posGroupRating(team, group) {
+    const pg = (team.position_groups || {})[group];
+    return pg ? pg.rating : null;
+}
+
+function _posGroupCount(team, group) {
+    const pg = (team.position_groups || {})[group];
+    return pg ? pg.player_count : 0;
+}
+
+function _ratingCell(rating) {
+    if (rating === null || rating === undefined || isNaN(rating)) {
+        return '<span style="color:var(--text-muted)">—</span>';
+    }
+    const cls = rating >= 60 ? "status-high" : rating >= 45 ? "status-medium" : "status-low";
+    return `<span class="status-pill ${cls}">${rating.toFixed(1)}</span>`;
+}
+
+async function renderTeams() {
+    const tbody = document.getElementById("teams-table-body");
+    if (!tbody) return;
+
+    // Fetch data if not loaded
+    if (teamStrengthData.count === 0) {
+        tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--text-muted)">Loading...</td></tr>';
+        try {
+            teamStrengthData = await fetchTeamStrength();
+        } catch {
+            tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--text-muted)">Failed to load</td></tr>';
+            return;
+        }
+    }
+
+    const teams = teamStrengthData.teams || [];
+    if (teams.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--text-muted)">No data</td></tr>';
+        return;
+    }
+
+    // Update summary metrics
+    const countEl = document.getElementById("teams-count");
+    const avgEl = document.getElementById("teams-avg-rating");
+    const topEl = document.getElementById("teams-top-rating");
+    if (countEl) countEl.textContent = teams.length;
+    const ratings = teams.map(t => t.overall_rating || 0);
+    const avg = ratings.length > 0 ? ratings.reduce((a, b) => a + b, 0) / ratings.length : 0;
+    const top = ratings.length > 0 ? Math.max(...ratings) : 0;
+    if (avgEl) avgEl.textContent = avg.toFixed(1);
+    if (topEl) topEl.textContent = top.toFixed(1);
+
+    // Populate league filter
+    const leagueFilter = document.getElementById("teams-league-filter");
+    if (leagueFilter && leagueFilter.options.length <= 1) {
+        const leagues = [...new Set(teams.map(t => t.league).filter(Boolean))].sort();
+        leagues.forEach(lg => {
+            const opt = document.createElement("option");
+            opt.value = lg;
+            opt.textContent = lg;
+            leagueFilter.appendChild(opt);
+        });
+    }
+
+    // Filter by league
+    const selectedLeague = leagueFilter ? leagueFilter.value : "";
+    const filtered = selectedLeague ? teams.filter(t => t.league === selectedLeague) : teams;
+
+    // Render table
+    tbody.innerHTML = filtered.map((team, i) => {
+        return `
+        <tr style="cursor:pointer" data-team="${escapeAttr(team.team)}">
+            <td>${i + 1}</td>
+            <td>${escapeHtml(team.team)}</td>
+            <td>${escapeHtml(team.league || "—")}</td>
+            <td><strong>${(team.overall_rating || 0).toFixed(1)}</strong></td>
+            <td>${team.squad_size || 0}</td>
+            <td>${_ratingCell(_posGroupRating(team, "GK"))}</td>
+            <td>${_ratingCell(_posGroupRating(team, "DEF"))}</td>
+            <td>${_ratingCell(_posGroupRating(team, "MID"))}</td>
+            <td>${_ratingCell(_posGroupRating(team, "ATT"))}</td>
+        </tr>`;
+    }).join("");
+
+    // Row click handler
+    tbody.querySelectorAll("tr[data-team]").forEach(row => {
+        row.addEventListener("click", () => {
+            const teamName = row.dataset.team;
+            const team = filtered.find(t => t.team === teamName);
+            if (team) renderTeamDetail(team);
+        });
+    });
+
+    // League filter handler
+    if (leagueFilter) {
+        leagueFilter.onchange = () => renderTeams();
+    }
+
+    // Render chart
+    renderTeamsChart(filtered);
+    initTeamCompareControls();
+}
+
+function renderTeamDetail(team) {
+    const content = document.getElementById("teams-detail-content");
+    const pill = document.getElementById("teams-detail-pill");
+    if (!content) return;
+
+    const posGroups = ["GK", "DEF", "MID", "ATT"];
+    const posBreakdown = posGroups.map(g => {
+        const pg = (team.position_groups || {})[g];
+        if (!pg) return "";
+        return `
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:0.3rem 0;border-bottom:1px solid var(--border)">
+            <span style="font-weight:600">${g}</span>
+            <span>${_ratingCell(pg.rating)} <span style="color:var(--text-muted);font-size:0.8rem">(${pg.player_count} players)</span></span>
+        </div>`;
+    }).join("");
+
+    const topPlayers = (team.top_players || []).map(p => {
+        return `
+        <tr>
+            <td>${escapeHtml(p.name)}</td>
+            <td>${escapeHtml(p.position || "—")}</td>
+            <td>${(p.rating || 0).toFixed(1)}</td>
+            <td>${p.minutes || 0}</td>
+            <td><span class="status-pill ${(p.confidence || "LOW").toUpperCase() === "HIGH" ? "status-high" : (p.confidence || "LOW").toUpperCase() === "MEDIUM" ? "status-medium" : "status-low"}">${escapeHtml(p.confidence || "LOW")}</span></td>
+        </tr>`;
+    }).join("");
+
+    content.innerHTML = `
+        <h4 style="margin:0 0 0.5rem">${escapeHtml(team.team)}</h4>
+        <p style="color:var(--text-muted);margin:0 0 0.5rem">${escapeHtml(team.league || "—")} · ${escapeHtml(team.season || "—")}</p>
+        <div style="margin:0.5rem 0">
+            <strong>${(team.overall_rating || 0).toFixed(1)}</strong> overall · ${team.squad_size || 0} players · ${team.total_minutes || 0} total minutes
+        </div>
+        <div style="margin:0.8rem 0">${posBreakdown}</div>
+        ${topPlayers ? `
+        <p style="margin:0.8rem 0 0.3rem;font-size:0.72rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.04em">Top Players</p>
+        <table class="data-table" style="font-size:0.8rem">
+            <thead><tr><th>Name</th><th>Pos</th><th>Rating</th><th>Min</th><th>Conf</th></tr></thead>
+            <tbody>${topPlayers}</tbody>
+        </table>` : ""}`;
+    if (pill) pill.textContent = (team.overall_rating || 0).toFixed(1);
+}
+
+function renderTeamsChart(teams) {
+    const chartEl = document.getElementById("teams-chart");
+    if (!chartEl || typeof echarts === "undefined") return;
+
+    // Show top 15 teams
+    const top = teams.slice(0, 15);
+    const chart = echarts.init(chartEl);
+    if (appState.charts.teams) appState.charts.teams.dispose();
+    appState.charts.teams = chart;
+
+    const teamNames = top.map(t => t.team);
+    const series = ["GK", "DEF", "MID", "ATT"].map(group => ({
+        name: group,
+        type: "bar",
+        stack: "total",
+        data: top.map(t => {
+            const pg = (t.position_groups || {})[group];
+            return pg ? pg.rating : 0;
+        }),
+    }));
+
+    chart.setOption({
+        tooltip: { trigger: "axis", axisPointer: { type: "shadow" } },
+        legend: { data: ["GK", "DEF", "MID", "ATT"], bottom: 0 },
+        grid: { left: "3%", right: "4%", bottom: "15%", containLabel: true },
+        xAxis: { type: "category", data: teamNames, axisLabel: { rotate: 45, fontSize: 10 } },
+        yAxis: { type: "value", name: "Rating" },
+        series: series,
+    });
+}
+
+async function fetchTeamComparison(a, b) {
+    try {
+        const data = await fetchJson(`/teams/compare?a=${encodeURIComponent(a)}&b=${encodeURIComponent(b)}`);
+        return data;
+    } catch (err) {
+        console.warn("Failed to fetch team comparison:", err);
+        return { error: "Failed to load comparison" };
+    }
+}
+
+function initTeamCompareControls() {
+    const btn = document.getElementById("team-compare-btn");
+    const inputA = document.getElementById("team-compare-input-a");
+    const inputB = document.getElementById("team-compare-input-b");
+    if (!btn || btn.dataset.bound) return;
+    btn.dataset.bound = "1";
+
+    const doCompare = async () => {
+        const a = inputA.value.trim();
+        const b = inputB.value.trim();
+        if (!a || !b) return;
+        btn.disabled = true;
+        btn.textContent = "...";
+        try {
+            await _renderTeamCompareResult(a, b);
+        } finally {
+            btn.disabled = false;
+            btn.textContent = t("teams_compare_button");
+        }
+    };
+
+    btn.addEventListener("click", doCompare);
+    const handler = (e) => { if (e.key === "Enter") doCompare(); };
+    if (inputA) inputA.addEventListener("keydown", handler);
+    if (inputB) inputB.addEventListener("keydown", handler);
+}
+
+async function _renderTeamCompareResult(a, b) {
+    const data = await fetchTeamComparison(a, b);
+    const wrap = document.getElementById("team-compare-result");
+
+    if (data.error) {
+        if (wrap) wrap.style.display = "none";
+        alert(data.error);
+        return;
+    }
+
+    if (wrap) wrap.style.display = "block";
+
+    const nameA = data.team_a ? data.team_a.name : a;
+    const nameB = data.team_b ? data.team_b.name : b;
+
+    // Column headers
+    const colA = document.getElementById("team-compare-col-a");
+    const colB = document.getElementById("team-compare-col-b");
+    if (colA) colA.textContent = nameA;
+    if (colB) colB.textContent = nameB;
+
+    // Pill
+    const pill = document.getElementById("team-compare-pill");
+    if (pill) {
+        const diff = data.overall_diff || 0;
+        pill.textContent = diff > 0 ? `${nameA} +${diff.toFixed(1)}` : diff < 0 ? `${nameB} +${(-diff).toFixed(1)}` : "Tie";
+    }
+
+    // Position group table
+    const body = document.getElementById("team-compare-pos-body");
+    if (body) {
+        body.innerHTML = (data.position_group_comparison || []).map(p => {
+            const valA = p.rating_a !== null && p.rating_a !== undefined ? p.rating_a.toFixed(1) : "—";
+            const valB = p.rating_b !== null && p.rating_b !== undefined ? p.rating_b.toFixed(1) : "—";
+            const diff = p.diff !== null && p.diff !== undefined ? (p.diff > 0 ? `+${p.diff.toFixed(1)}` : p.diff.toFixed(1)) : "—";
+            const cls = p.diff > 0 ? "status-high" : p.diff < 0 ? "status-low" : "";
+            return `<tr>
+                <td>${escapeHtml(p.group)}</td>
+                <td>${valA}</td>
+                <td>${valB}</td>
+                <td><span class="status-pill ${cls}">${diff}</span></td>
+            </tr>`;
+        }).join("");
+    }
+
+    // Radar chart
+    const chartEl = document.getElementById("team-compare-radar-chart");
+    if (chartEl && typeof echarts !== "undefined") {
+        if (appState.charts.teamCompare) appState.charts.teamCompare.dispose();
+        const chart = echarts.init(chartEl);
+        appState.charts.teamCompare = chart;
+
+        chart.setOption({
+            tooltip: { trigger: "item" },
+            legend: { data: [nameA, nameB], bottom: 0 },
+            radar: {
+                indicator: (data.radar_labels || []).map(l => ({ name: l, max: 100 })),
+                shape: "polygon",
+            },
+            series: [{
+                type: "radar",
+                data: [
+                    {
+                        value: data.radar_a || [],
+                        name: nameA,
+                        areaStyle: { opacity: 0.2 },
+                        lineStyle: { width: 2 },
+                    },
+                    {
+                        value: data.radar_b || [],
+                        name: nameB,
+                        areaStyle: { opacity: 0.2 },
+                        lineStyle: { width: 2 },
+                    },
+                ],
+            }],
+        });
+    }
+}
+
 function renderReports() {
     const latestRun = (modelRuns.runs || [])[0] || {};
     const latestMetrics = latestRun.metrics || {};
@@ -3316,9 +3843,11 @@ function renderData() {
 
 async function renderActiveView() {
     if (appState.view === "overview") renderOverview();
-    if (appState.view === "players") renderPlayers();
+    if (appState.view === "players") await renderPlayers();
+    if (appState.view === "compare") await renderCompare();
     if (appState.view === "value") renderValue();
     if (appState.view === "matches") await renderMatches();
+    if (appState.view === "teams") await renderTeams();
     if (appState.view === "scouting") renderScouting();
     if (appState.view === "actions") renderActions();
     if (appState.view === "reports") renderReports();

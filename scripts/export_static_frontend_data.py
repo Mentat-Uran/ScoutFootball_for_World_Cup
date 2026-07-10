@@ -163,7 +163,14 @@ def export_basics() -> None:
         if hasattr(players, "player_count")
         else len(players.get("players", []))
     )
-    print(f"  health.json, artifacts.json, teams.json ({len(teams)}), players_list.json ({pc})")
+
+    from scoutfootball.api import get_team_strength
+
+    _write_json(DATA_DIR / "team_strength.json", get_team_strength())
+    print(
+        f"  health.json, artifacts.json, teams.json ({len(teams)}), "
+        f"players_list.json ({pc}), team_strength.json"
+    )
 
 
 def export_value_summary() -> None:

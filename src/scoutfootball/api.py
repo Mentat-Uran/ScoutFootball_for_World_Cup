@@ -5,11 +5,11 @@ from __future__ import annotations
 import json
 import math
 from dataclasses import dataclass
-from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
 import numpy as np
+import pandas as pd
 
 from scoutfootball.app.data_loader import (
     data_source_label,
@@ -568,6 +568,258 @@ def get_ratings_meta() -> dict:
     return _clean_json_value({"model_meta": meta, "league_metrics": leagues})
 
 
+# ── Position group mapping for team strength aggregation ──────────
+_POS_GROUP_MAP: dict[str, str] = {
+    "GK": "GK",
+    "CB": "DEF", "FB": "DEF", "LB": "DEF", "RB": "DEF", "RWB": "DEF", "LWB": "DEF",
+    "DM": "MID", "CM": "MID", "AM": "MID", "CDM": "MID", "CAM": "MID", "LM": "MID", "RM": "MID",
+    "W": "ATT", "ST": "ATT", "CF": "ATT", "RW": "ATT", "LW": "ATT", "WF": "ATT",
+}
+
+
+def _broad_position(pos: str | None) -> str:
+    """Map a granular position to GK/DEF/MID/ATT."""
+    if not pos:
+        return "UNK"
+    key = str(pos).strip().upper()
+    return _POS_GROUP_MAP.get(key, "UNK")
+
+
+def get_team_strength(
+    league: str | None = None,
+    season: str | None = None,
+    limit: int = 100,
+) -> dict:
+    """Aggregate player ratings to team-level strength metrics.
+
+    Returns overall team rating, position-group breakdowns, top players,
+    squad depth and average confidence for each team.
+    """
+    df = load_player_ratings(league=league, season=season)
+    if df.empty:
+        return {"count": 0, "teams": []}
+
+    # Resolve column aliases
+    team_col = "team" if "team" in df.columns else (
+        "team_name" if "team_name" in df.columns else None
+    )
+    score_col = "optimized_score" if "optimized_score" in df.columns else (
+        "rating" if "rating" in df.columns else None
+    )
+    pos_col = "position_group" if "position_group" in df.columns else (
+        "sub_position" if "sub_position" in df.columns else None
+    )
+    minutes_col = "minutes" if "minutes" in df.columns else None
+    name_col = "player_name" if "player_name" in df.columns else (
+        "player" if "player" in df.columns else None
+    )
+    league_col = "league" if "league" in df.columns else None
+    season_col = "season" if "season" in df.columns else None
+    conf_col = "confidence_level" if "confidence_level" in df.columns else None
+
+    if team_col is None or score_col is None:
+        return {"count": 0, "teams": []}
+
+    # Filter out rows with no team or score
+    df = df[df[team_col].notna() & df[score_col].notna()].copy()
+    # Exclude comma-joined club histories (transferred players)
+    df = df[~df[team_col].astype(str).str.contains(",", na=False)]
+    # Normalize team name
+    df[team_col] = df[team_col].astype(str).str.strip()
+    df = df[df[team_col] != ""]
+
+    if df.empty:
+        return {"count": 0, "teams": []}
+
+    # Add broad position group
+    if pos_col:
+        df["broad_pos"] = df[pos_col].map(_broad_position)
+    else:
+        df["broad_pos"] = "UNK"
+
+    # Ensure numeric score
+    df[score_col] = pd.to_numeric(df[score_col], errors="coerce").fillna(0.0)
+    if minutes_col:
+        df[minutes_col] = pd.to_numeric(df[minutes_col], errors="coerce").fillna(0.0)
+    else:
+        df["minutes"] = 0.0
+        minutes_col = "minutes"
+
+    teams: list[dict[str, Any]] = []
+
+    for team_name, group in df.groupby(team_col):
+        # Minutes-weighted overall rating
+        total_minutes = group[minutes_col].sum()
+        if total_minutes > 0:
+            overall = float((group[score_col] * group[minutes_col]).sum() / total_minutes)
+        else:
+            overall = float(group[score_col].mean())
+
+        # Position group breakdown
+        pos_breakdown: dict[str, dict[str, Any]] = {}
+        for bpos, pg in group.groupby("broad_pos"):
+            pg_minutes = pg[minutes_col].sum()
+            if pg_minutes > 0:
+                pg_rating = float((pg[score_col] * pg[minutes_col]).sum() / pg_minutes)
+            else:
+                pg_rating = float(pg[score_col].mean())
+            pos_breakdown[bpos] = {
+                "rating": round(pg_rating, 2),
+                "player_count": int(len(pg)),
+                "avg_minutes": round(float(pg[minutes_col].mean()), 0) if len(pg) > 0 else 0,
+            }
+
+        # Top players by score (with minutes weighting)
+        top_players_df = group.nlargest(5, score_col)
+        top_players = []
+        for _, row in top_players_df.iterrows():
+            top_players.append({
+                "name": str(row.get(name_col, "")) if name_col else "",
+                "position": str(row.get(pos_col, "")) if pos_col else "",
+                "broad_pos": str(row.get("broad_pos", "")),
+                "rating": round(float(row[score_col]), 1),
+                "minutes": int(row.get(minutes_col, 0)) if minutes_col else 0,
+                "confidence": str(row.get(conf_col, "LOW")).upper() if conf_col else "LOW",
+            })
+
+        # Average confidence
+        if conf_col and conf_col in group.columns:
+            conf_counts = group[conf_col].astype(str).str.upper().value_counts().to_dict()
+        else:
+            conf_counts = {}
+
+        team_entry = {
+            "team": team_name,
+            "league": str(group[league_col].iloc[0])
+            if league_col and league_col in group.columns else "",
+            "season": str(group[season_col].iloc[0])
+            if season_col and season_col in group.columns else "",
+            "overall_rating": round(overall, 2),
+            "squad_size": int(len(group)),
+            "total_minutes": int(total_minutes),
+            "position_groups": pos_breakdown,
+            "top_players": top_players,
+            "confidence_distribution": conf_counts,
+        }
+        teams.append(team_entry)
+
+    # Sort by overall rating descending
+    teams.sort(key=lambda t: t["overall_rating"], reverse=True)
+
+    # Apply limit
+    teams = teams[:limit]
+
+    return _clean_json_value({"count": len(teams), "teams": teams})
+
+
+def get_team_comparison(team_a: str, team_b: str) -> dict:
+    """Compare two teams side-by-side using team strength data.
+
+    Returns position group diffs, top player comparison and squad metrics.
+    """
+    # Normalize team names for matching
+    strength = get_team_strength(limit=500)
+    all_teams = strength.get("teams", [])
+
+    # Find teams by name (case-insensitive partial match)
+    def _find(name):
+        name_lower = name.lower().strip()
+        for t in all_teams:
+            if t["team"].lower() == name_lower:
+                return t
+        for t in all_teams:
+            if name_lower in t["team"].lower():
+                return t
+        return None
+
+    a = _find(team_a)
+    b = _find(team_b)
+
+    if not a:
+        return {"error": f"Team '{team_a}' not found"}
+    if not b:
+        return {"error": f"Team '{team_b}' not found"}
+
+    # Position group comparison
+    pos_groups = ["GK", "DEF", "MID", "ATT"]
+    pos_comparison = []
+    for pg in pos_groups:
+        pg_a = (a.get("position_groups") or {}).get(pg)
+        pg_b = (b.get("position_groups") or {}).get(pg)
+        rating_a = pg_a["rating"] if pg_a else None
+        rating_b = pg_b["rating"] if pg_b else None
+        diff = None
+        advantage = "tie"
+        if rating_a is not None and rating_b is not None:
+            diff = round(rating_a - rating_b, 2)
+            advantage = "a" if rating_a > rating_b else ("b" if rating_b > rating_a else "tie")
+        pos_comparison.append({
+            "group": pg,
+            "rating_a": rating_a,
+            "rating_b": rating_b,
+            "diff": diff,
+            "advantage": advantage,
+            "players_a": pg_a["player_count"] if pg_a else 0,
+            "players_b": pg_b["player_count"] if pg_b else 0,
+        })
+
+    # Top players side-by-side (top 5 each)
+    top_a = a.get("top_players", [])
+    top_b = b.get("top_players", [])
+    max_top = max(len(top_a), len(top_b))
+    top_comparison = []
+    for i in range(max_top):
+        pa = top_a[i] if i < len(top_a) else None
+        pb = top_b[i] if i < len(top_b) else None
+        top_comparison.append({
+            "player_a": pa,
+            "player_b": pb,
+        })
+
+    # Overall metrics comparison
+    overall_a = a.get("overall_rating", 0)
+    overall_b = b.get("overall_rating", 0)
+    overall_diff = round(overall_a - overall_b, 2)
+
+    return _clean_json_value({
+        "team_a": {
+            "name": a["team"],
+            "league": a.get("league", ""),
+            "overall_rating": overall_a,
+            "squad_size": a.get("squad_size", 0),
+            "total_minutes": a.get("total_minutes", 0),
+            "confidence_distribution": a.get("confidence_distribution", {}),
+        },
+        "team_b": {
+            "name": b["team"],
+            "league": b.get("league", ""),
+            "overall_rating": overall_b,
+            "squad_size": b.get("squad_size", 0),
+            "total_minutes": b.get("total_minutes", 0),
+            "confidence_distribution": b.get("confidence_distribution", {}),
+        },
+        "overall_diff": overall_diff,
+        "overall_advantage": "a" if overall_diff > 0 else ("b" if overall_diff < 0 else "tie"),
+        "position_group_comparison": pos_comparison,
+        "top_players_comparison": top_comparison,
+        "radar_labels": ["GK", "DEF", "MID", "ATT", "Overall"],
+        "radar_a": [
+            (a.get("position_groups") or {}).get("GK", {}).get("rating", 0),
+            (a.get("position_groups") or {}).get("DEF", {}).get("rating", 0),
+            (a.get("position_groups") or {}).get("MID", {}).get("rating", 0),
+            (a.get("position_groups") or {}).get("ATT", {}).get("rating", 0),
+            overall_a,
+        ],
+        "radar_b": [
+            (b.get("position_groups") or {}).get("GK", {}).get("rating", 0),
+            (b.get("position_groups") or {}).get("DEF", {}).get("rating", 0),
+            (b.get("position_groups") or {}).get("MID", {}).get("rating", 0),
+            (b.get("position_groups") or {}).get("ATT", {}).get("rating", 0),
+            overall_b,
+        ],
+    })
+
+
 def get_prediction_summary() -> dict[str, Any]:
     """Return baseline prediction artifact metadata."""
     artifact_path = (
@@ -626,13 +878,28 @@ def get_prediction_summary() -> dict[str, Any]:
     })
 
 
-@lru_cache(maxsize=1)
-def get_prediction_calibration() -> dict[str, Any]:
+_calibration_cache: dict[str, Any] = {"data": None, "timestamp": 0.0}
+_CALIBRATION_TTL_SECONDS = 300  # 5 minutes
+
+
+def get_prediction_calibration(force_refresh: bool = False) -> dict[str, Any]:
     """Return calibration metrics for match prediction models.
 
     Compares Poisson vs Dixon-Coles side by side.
     Includes low-score breakdown (0-0, 1-0, 0-1, 1-1) and league coverage.
+
+    Results are cached for 5 minutes to avoid repeated parquet reads.
+    Pass force_refresh=True to bypass the cache (e.g. after model retraining).
     """
+    import time
+
+    now = time.time()
+    if (
+        not force_refresh
+        and _calibration_cache["data"] is not None
+        and now - _calibration_cache["timestamp"] < _CALIBRATION_TTL_SECONDS
+    ):
+        return _calibration_cache["data"]
     settings = _settings()
     model_root = settings.data_root / "models"
     artifact_dir = model_root / "artifacts"
@@ -772,13 +1039,16 @@ def get_prediction_calibration() -> dict[str, Any]:
         except Exception:
             poisson_metrics = {"status": "error"}
 
-    return _clean_json_value({
+    result = _clean_json_value({
         "dixon_coles": dc_metrics,
         "poisson": poisson_metrics,
         "low_score_breakdown": dc_low_score,
         "calibration_plot": dc_calibration_plot,
         "league_coverage": dc_league_coverage,
     })
+    _calibration_cache["data"] = result
+    _calibration_cache["timestamp"] = time.time()
+    return result
 
 
 def get_action_value_summary(
@@ -1026,17 +1296,37 @@ def get_artifacts_summary() -> dict:
     })
 
 
+def _get_scouting_queues():
+    """Build and cache scouting queues to avoid redundant computation.
+
+    Each of get_review_queue / get_watchlist / get_shortlist previously
+    called build_scouting_queues independently on the full ratings
+    DataFrame.  This helper computes the queues once per process and
+    reuses the result for all three endpoints.
+    """
+    if "scouting_queues" not in _wc_cache:
+        df = load_player_ratings()
+        if df.empty:
+            from scoutfootball.evaluation.scouting_queue import ScoutingQueues
+            _wc_cache["scouting_queues"] = ScoutingQueues(
+                review_queue=df, watchlist=df, shortlist=df,
+            )
+        else:
+            _wc_cache["scouting_queues"] = build_scouting_queues(
+                df,
+                run_id=_latest_run_id(),
+                reports_root=_settings().data_root / "reports",
+            )
+    return _wc_cache["scouting_queues"]
+
+
 def get_review_queue(limit: int = 200) -> dict:
     """Return low-confidence players from ratings data as a review queue."""
     df = load_player_ratings()
     if df.empty:
         return {"count": 0, "players": []}
 
-    queues = build_scouting_queues(
-        df,
-        run_id=_latest_run_id(),
-        reports_root=_settings().data_root / "reports",
-    )
+    queues = _get_scouting_queues()
     return _queue_payload(queues.review_queue, limit=limit)
 
 
@@ -1044,11 +1334,7 @@ def get_watchlist(limit: int = 100) -> dict:
     df = load_player_ratings()
     if df.empty:
         return {"count": 0, "players": []}
-    queues = build_scouting_queues(
-        df,
-        run_id=_latest_run_id(),
-        reports_root=_settings().data_root / "reports",
-    )
+    queues = _get_scouting_queues()
     return _queue_payload(queues.watchlist, limit=limit)
 
 
@@ -1056,11 +1342,7 @@ def get_shortlist(limit: int = 100) -> dict:
     df = load_player_ratings()
     if df.empty:
         return {"count": 0, "players": []}
-    queues = build_scouting_queues(
-        df,
-        run_id=_latest_run_id(),
-        reports_root=_settings().data_root / "reports",
-    )
+    queues = _get_scouting_queues()
     return _queue_payload(queues.shortlist, limit=limit)
 
 
@@ -1728,6 +2010,133 @@ def get_player_profile(
     if fmt == "csv":
         return _player_list_to_csv([result])
     return result
+
+
+# ── Player comparison ────────────────────────────────────────────────────
+
+_RADAR_LABELS = ["Attack", "Possession", "Defense", "Reliability", "Impact"]
+
+
+def get_player_comparison(player_a: str, player_b: str) -> dict:
+    """Compare two players side-by-side with radar overlay and metric diffs.
+
+    Calls get_player_profile for both players, then builds a unified
+    comparison structure with per-dimension deltas.
+    """
+    profile_a = get_player_profile(player_a)
+    profile_b = get_player_profile(player_b)
+
+    if not profile_a.get("found"):
+        return {"error": f"Player '{player_a}' not found", "found_a": False}
+    if not profile_b.get("found"):
+        return {"error": f"Player '{player_b}' not found", "found_b": False}
+
+    # Build radar comparison
+    radar_a = profile_a.get("radar", [0, 0, 0, 0, 0])
+    radar_b = profile_b.get("radar", [0, 0, 0, 0, 0])
+    # Pad to 5 elements if needed
+    while len(radar_a) < 5:
+        radar_a.append(0)
+    while len(radar_b) < 5:
+        radar_b.append(0)
+
+    radar_comparison = []
+    for i, label in enumerate(_RADAR_LABELS):
+        val_a = float(radar_a[i]) if i < len(radar_a) else 0.0
+        val_b = float(radar_b[i]) if i < len(radar_b) else 0.0
+        radar_comparison.append({
+            "dimension": label,
+            "player_a": round(val_a, 1),
+            "player_b": round(val_b, 1),
+            "diff": round(val_a - val_b, 1),
+            "advantage": "a" if val_a > val_b else ("b" if val_b > val_a else "tie"),
+        })
+
+    # Position percentiles comparison
+    pp_a = profile_a.get("position_percentiles", {})
+    pp_b = profile_b.get("position_percentiles", {})
+
+    # Merge dimension keys from both
+    all_dims = list(dict.fromkeys(
+        list(pp_a.get("dimensions", [])) + list(pp_b.get("dimensions", []))
+    ))
+
+    pct_comparison = []
+    for dim in all_dims:
+        val_a = None
+        val_b = None
+        for d in pp_a.get("dimensions", []):
+            if d.get("name") == dim:
+                val_a = d.get("percentile")
+                break
+        for d in pp_b.get("dimensions", []):
+            if d.get("name") == dim:
+                val_b = d.get("percentile")
+                break
+        diff = None
+        advantage = "tie"
+        if val_a is not None and val_b is not None:
+            diff = round(float(val_a) - float(val_b), 1)
+            advantage = "a" if val_a > val_b else ("b" if val_b > val_a else "tie")
+        pct_comparison.append({
+            "dimension": dim,
+            "player_a": val_a,
+            "player_b": val_b,
+            "diff": diff,
+            "advantage": advantage,
+        })
+
+    # Key stats comparison
+    stats_fields = [
+        "optimized_score", "minutes", "matches", "npg_p90",
+        "assists_p90", "defense_composite", "possession_composite",
+    ]
+    stats_comparison = []
+    for field in stats_fields:
+        val_a = profile_a.get(field)
+        val_b = profile_b.get(field)
+        diff = None
+        if val_a is not None and val_b is not None:
+            try:
+                diff = round(float(val_a) - float(val_b), 2)
+            except (ValueError, TypeError):
+                pass
+        stats_comparison.append({
+            "metric": field,
+            "player_a": val_a,
+            "player_b": val_b,
+            "diff": diff,
+        })
+
+    return _clean_json_value({
+        "player_a": {
+            "name": profile_a.get("player", player_a),
+            "team": profile_a.get("team", ""),
+            "league": profile_a.get("league", ""),
+            "season": profile_a.get("season", ""),
+            "position_group": profile_a.get("position_group", ""),
+            "optimized_score": profile_a.get("optimized_score"),
+            "confidence_level": profile_a.get("confidence_level", "LOW"),
+        },
+        "player_b": {
+            "name": profile_b.get("player", player_b),
+            "team": profile_b.get("team", ""),
+            "league": profile_b.get("league", ""),
+            "season": profile_b.get("season", ""),
+            "position_group": profile_b.get("position_group", ""),
+            "optimized_score": profile_b.get("optimized_score"),
+            "confidence_level": profile_b.get("confidence_level", "LOW"),
+        },
+        "radar_labels": _RADAR_LABELS,
+        "radar_a": [r["player_a"] for r in radar_comparison],
+        "radar_b": [r["player_b"] for r in radar_comparison],
+        "radar_comparison": radar_comparison,
+        "position_percentile_comparison": pct_comparison,
+        "stats_comparison": stats_comparison,
+        "same_position": (
+            profile_a.get("position_group", "") == profile_b.get("position_group", "")
+        ),
+    })
 
 
 # ── World Cup endpoints ──────────────────────────────────────────────────

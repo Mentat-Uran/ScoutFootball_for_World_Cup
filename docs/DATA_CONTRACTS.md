@@ -532,6 +532,99 @@ Value deviation analysis from OOF predictions.
 ### GET /predictions/meta
 Match prediction model metadata.
 
+### GET /teams/strength
+
+Aggregated team-level strength metrics derived from player ratings.
+
+**Query params**: `league` (optional), `season` (optional), `limit` (default 100)
+
+**Response**:
+```json
+{
+  "count": 2,
+  "teams": [
+    {
+      "team": "Team Alpha",
+      "league": "Premier League",
+      "season": "2526",
+      "overall_rating": 62.5,
+      "squad_size": 20,
+      "total_minutes": 25000,
+      "position_groups": {
+        "GK": { "rating": 55.0, "player_count": 2, "avg_minutes": 900 },
+        "DEF": { "rating": 60.0, "player_count": 6, "avg_minutes": 1500 },
+        "MID": { "rating": 65.0, "player_count": 7, "avg_minutes": 1800 },
+        "ATT": { "rating": 68.0, "player_count": 5, "avg_minutes": 1600 }
+      },
+      "top_players": [
+        { "name": "Player A", "position": "ST", "broad_pos": "ATT", "rating": 70.0, "minutes": 1800, "confidence": "HIGH" }
+      ],
+      "confidence_distribution": { "HIGH": 15, "MEDIUM": 3, "LOW": 2 }
+    }
+  ]
+}
+```
+
+The overall rating is minutes-weighted: `sum(score * minutes) / sum(minutes)`.
+Position groups are mapped from granular positions to GK, DEF, MID, ATT.
+Players with comma-joined team names (transferred players) are excluded.
+
+### GET /teams/compare
+
+Side-by-side comparison of two teams with position group radar and diff table.
+
+**Query params**: `a` (team name), `b` (team name)
+
+**Response**:
+```json
+{
+  "team_a": { "name": "Arsenal", "league": "...", "overall_rating": 65.5, "squad_size": 22 },
+  "team_b": { "name": "Barcelona", "league": "...", "overall_rating": 68.0, "squad_size": 25 },
+  "overall_diff": -2.5,
+  "overall_advantage": "b",
+  "position_group_comparison": [
+    { "group": "GK", "rating_a": 55.0, "rating_b": 60.0, "diff": -5.0, "advantage": "b", "players_a": 2, "players_b": 3 }
+  ],
+  "top_players_comparison": [
+    { "player_a": { "name": "...", "rating": 72.0 }, "player_b": { "name": "...", "rating": 75.0 } }
+  ],
+  "radar_labels": ["GK", "DEF", "MID", "ATT", "Overall"],
+  "radar_a": [55.0, 60.0, 65.0, 70.0, 65.5],
+  "radar_b": [60.0, 62.0, 68.0, 72.0, 68.0]
+}
+```
+
+Team matching is case-insensitive and supports partial name matches.
+
+### GET /players/compare
+
+Side-by-side comparison of two players with radar overlay and metric diffs.
+
+**Query params**: `a` (player name), `b` (player name)
+
+**Response**:
+```json
+{
+  "player_a": { "name": "...", "team": "...", "position_group": "ST", "optimized_score": 72.0 },
+  "player_b": { "name": "...", "team": "...", "position_group": "CM", "optimized_score": 68.0 },
+  "radar_labels": ["Attack", "Possession", "Defense", "Reliability", "Impact"],
+  "radar_a": [85.0, 40.0, 20.0, 100.0, 75.0],
+  "radar_b": [30.0, 80.0, 70.0, 100.0, 60.0],
+  "radar_comparison": [
+    { "dimension": "Attack", "player_a": 85.0, "player_b": 30.0, "diff": 55.0, "advantage": "a" }
+  ],
+  "position_percentile_comparison": [...],
+  "stats_comparison": [
+    { "metric": "optimized_score", "player_a": 72.0, "player_b": 68.0, "diff": 4.0 }
+  ],
+  "same_position": false
+}
+```
+
+Radar values are position-pool percentiles (0-100). Position percentile comparison
+uses position-specific dimensions from `POSITION_DIMENSIONS`. Players in different
+position groups will have different dimension sets.
+
 ---
 
 ## 9.5 Static Snapshot Contracts

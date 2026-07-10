@@ -47,3 +47,55 @@ def test_health_endpoint(client: TestClient):
     """/health should return 200."""
     response = client.get("/health")
     assert response.status_code == 200
+
+
+def test_teams_strength_endpoint(client: TestClient):
+    """/teams/strength should return 200 with team strength data."""
+    response = client.get("/teams/strength")
+    assert response.status_code == 200
+    data = response.json()
+    assert "count" in data
+    assert "teams" in data
+    assert isinstance(data["teams"], list)
+    if data["teams"]:
+        team = data["teams"][0]
+        assert "team" in team
+        assert "overall_rating" in team
+        assert "squad_size" in team
+        assert "position_groups" in team
+        assert "top_players" in team
+
+
+def test_teams_strength_with_limit(client: TestClient):
+    """/teams/strength should respect limit parameter."""
+    response = client.get("/teams/strength?limit=5")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["count"] <= 5
+
+
+def test_players_compare_endpoint(client: TestClient):
+    """/players/compare should return comparison data."""
+    response = client.get("/players/compare?a=Lionel Messi&b=Cristiano Ronaldo")
+    assert response.status_code == 200
+    data = response.json()
+    # Should have either comparison data or error
+    if "error" not in data:
+        assert "player_a" in data
+        assert "player_b" in data
+        assert "radar_labels" in data
+        assert "radar_a" in data
+        assert "radar_b" in data
+        assert "stats_comparison" in data
+
+
+def test_teams_compare_endpoint(client: TestClient):
+    """/teams/compare should return team comparison data."""
+    response = client.get("/teams/compare?a=Arsenal&b=Barcelona")
+    assert response.status_code == 200
+    data = response.json()
+    if "error" not in data:
+        assert "team_a" in data
+        assert "team_b" in data
+        assert "position_group_comparison" in data
+        assert "radar_labels" in data

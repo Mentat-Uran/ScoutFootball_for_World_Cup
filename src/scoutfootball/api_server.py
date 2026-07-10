@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -19,6 +20,7 @@ from scoutfootball.api import (
     get_match_prediction_dc,
     get_model_run_detail,
     get_model_runs,
+    get_player_comparison,
     get_player_profile,
     get_player_ratings,
     get_prediction_calibration,
@@ -26,6 +28,8 @@ from scoutfootball.api import (
     get_ratings_meta,
     get_review_queue,
     get_shortlist,
+    get_team_comparison,
+    get_team_strength,
     get_value_summary,
     get_watchlist,
     get_wc_groups,
@@ -127,6 +131,18 @@ def create_app() -> FastAPI:
     def teams_list():
         return {"teams": list_teams()}
 
+    @app.get("/teams/strength")
+    def teams_strength(
+        league: str | None = None,
+        season: str | None = None,
+        limit: int = 100,
+    ):
+        return get_team_strength(league=league, season=season, limit=limit)
+
+    @app.get("/teams/compare")
+    def teams_compare(a: str, b: str):
+        return get_team_comparison(a, b)
+
     @app.get("/prediction/{home_team}/{away_team}")
     def prediction(home_team: str, away_team: str, model: str = "poisson"):
         if model == "dixon_coles":
@@ -182,6 +198,10 @@ def create_app() -> FastAPI:
     @app.get("/ratings/meta")
     def ratings_meta():
         return get_ratings_meta()
+
+    @app.get("/players/compare")
+    def players_compare(a: str, b: str):
+        return get_player_comparison(a, b)
 
     @app.get("/player/{player_name}/profile")
     def player_profile(player_name: str, season: str | None = None):
@@ -302,6 +322,14 @@ def create_app() -> FastAPI:
 
         try:
             body = await request.body()
+
+            # Reject uploads larger than 50 MB to prevent abuse
+            if len(body) > 50 * 1024 * 1024:
+                return _clean_json_value({
+                    "status": "error",
+                    "error": "Upload exceeds 50 MB size limit",
+                })
+
             export_dir = _settings().data_root / "reports" / "tactical_exports"
             export_dir.mkdir(parents=True, exist_ok=True)
 
@@ -352,8 +380,6 @@ def create_app() -> FastAPI:
             return _clean_json_value({"status": "error", "error": str(exc)})
 
     # Serve frontend static files
-    from pathlib import Path
-
     frontend_dir = Path(__file__).resolve().parents[2] / "frontend"
     if frontend_dir.exists():
         app.mount("/", StaticFiles(directory=str(frontend_dir), html=True), name="frontend")
