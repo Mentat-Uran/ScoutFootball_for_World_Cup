@@ -542,6 +542,32 @@ body.dark-mode .mesh-bg {
     backdrop-filter: blur(24px);
 }
 
+.action-identity-rail {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+    padding: 10px 14px;
+    border: 1px solid color-mix(in srgb, var(--blue) 30%, var(--glass-border));
+    border-radius: var(--radius-lg);
+    color: var(--text-muted);
+    background: color-mix(in srgb, var(--blue) 7%, var(--glass-bg));
+    font-size: 0.74rem;
+    line-height: 1.45;
+}
+
+.action-identity-rail[hidden] {
+    display: none;
+}
+
+.action-identity-rail strong {
+    color: var(--text-primary);
+}
+
+.action-identity-rail span {
+    flex-basis: 100%;
+}
+
 .compact-search {
     min-width: min(320px, 100%);
     flex: 1 1 240px;
@@ -1033,6 +1059,80 @@ tbody button {
 .rank-item strong,
 .watch-card strong {
     display: block;
+}
+
+.action-rank-item {
+    width: 100%;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+    transition: border-color 160ms ease, background 160ms ease, transform 160ms ease;
+}
+
+.action-rank-item:hover,
+.action-rank-item:focus-visible {
+    border-color: var(--glass-border-strong);
+    background: var(--glass-bg-hover);
+    transform: translateY(-1px);
+    outline: none;
+}
+
+.action-detail-score {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+}
+
+.action-detail-score > div,
+.action-detail-facts > div {
+    padding: 13px;
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-md);
+    background: var(--glass-bg-strong);
+}
+
+.action-detail-score span,
+.action-detail-facts dt {
+    color: var(--text-muted);
+    font-size: 0.7rem;
+}
+
+.action-detail-score strong {
+    display: block;
+    margin-top: 5px;
+    font-size: 1.15rem;
+}
+
+.action-detail-facts {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    margin: 14px 0 0;
+}
+
+.action-detail-facts dd {
+    margin: 5px 0 0;
+    font-size: 0.84rem;
+    overflow-wrap: anywhere;
+}
+
+.action-detail-boundary {
+    margin-top: 14px;
+    padding: 11px 13px;
+    border-left: 3px solid var(--warn);
+    border-radius: var(--radius-sm);
+    color: var(--text-muted);
+    background: color-mix(in srgb, var(--warn) 8%, transparent);
+    font-size: 0.74rem;
+    line-height: 1.55;
+}
+
+@media (max-width: 560px) {
+    .action-detail-score,
+    .action-detail-facts {
+        grid-template-columns: 1fr;
+    }
 }
 
 .rank-meta {

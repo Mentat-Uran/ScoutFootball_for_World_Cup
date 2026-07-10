@@ -415,9 +415,80 @@ Model metadata and league metrics.
 Artifact counts and data health summary.
 
 ### GET /action-values
-Player action value summary from StatsBomb sample.
+Player action value summary from StatsBomb sample. xT and VAEP are kept in
+separate arrays because they have different granularity (xT is
+player-team-season; VAEP is player-team career).
 
-**Query params**: `limit` (default=20)
+**Query params**: `limit` (default=20), `offset` (default=0); both apply
+independently to each model section.
+
+**Response**:
+```json
+{
+  "status": "ok",
+  "count": 15062,
+  "offset": 0,
+  "limit": 500,
+  "data_source": "StatsBomb Open Data + xT/VAEP model",
+  "attribution_required": "StatsBomb Open Data",
+  "model_granularity": { "xt": "player_team_season", "vaep": "player_team_career" },
+  "metrics": {
+    "total_rows": 15062,
+    "xt_rows": 8291,
+    "vaep_rows": 6771,
+    "mean_xt_per_90": 0.0123,
+    "mean_vaep_per_90": 0.0456,
+    "players_with_xt": 8291,
+    "players_with_vaep": 6771
+  },
+  "identity_coverage": {
+    "schema": "scoutfootball.vaep-identity-coverage",
+    "version": "1.1.0",
+    "granularity": "player_team_career",
+    "total_rows": 6771,
+    "mapped_rows": 6698,
+    "partial_rows": 0,
+    "unmapped_rows": 73,
+    "coverage_rate": 0.989,
+    "player_name_coverage_rate": 0.989,
+    "team_name_coverage_rate": 1.0,
+    "season_context_coverage_rate": 0.989,
+    "single_season_rows": 5000,
+    "multi_season_rows": 1771,
+    "source_counts": { "xt_player_team_bridge": 6698, "unmapped": 73 },
+    "season_context_semantics": "Context only: VAEP values are aggregated across the player-team career row, not allocated to individual seasons."
+  },
+  "players": [ /* xt_page rows (alias for xt_players) */ ],
+  "xt_players": [
+    {
+      "player_id": "10", "player_name": "Ada Forward", "team_id": "20",
+      "team_name": "City Women", "season": "2023/2024", "competition": "League",
+      "xt_total": 1.23, "xt_per_90": 0.045, "estimated_minutes": 1800
+    }
+  ],
+  "vaep_players": [
+    {
+      "player_id": "10", "player_name": "Ada Forward", "team_id": "20",
+      "team_name": "City Women", "vaep_total": 8.0, "vaep_per_90": 0.4,
+      "season_context": "2022/2023 | 2023/2024", "season_count": 2,
+      "competition_context": "League | Cup", "competition_count": 2,
+      "identity_status": "mapped", "identity_mapped": true,
+      "player_name_source": "xt_player_team_bridge", "team_name_source": "statsbomb_matches"
+    }
+  ]
+}
+```
+
+**Identity fields (VAEP rows only)**:
+- `identity_status`: `mapped` (player+team+season all resolved), `partial` (some resolved), `unmapped` (none).
+- `identity_mapped`: boolean, true when `identity_status` == "mapped".
+- `player_name_source` / `team_name_source`: provenance of display name.
+- `season_context` / `competition_context`: pipe-delimited sorted deduplicated list; context only, not season-level allocation.
+- Unmapped rows are retained; the frontend falls back to displaying `player_id`.
+
+**Coverage report schema**: `scoutfootball.vaep-identity-coverage` v1.1.0.
+Coverage rates are derived from the current VAEP rows; when the VAEP artifact
+is empty, all counts/rates are 0 and no exception is raised.
 
 ### GET /review-queue
 Low-confidence players for review.

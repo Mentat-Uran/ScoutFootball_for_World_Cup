@@ -450,6 +450,12 @@
                     <select id="action-competition-filter" class="glass-control" aria-label="Competition filter">
                         <option value="ALL" data-i18n="action_all_competitions">全部赛事</option>
                     </select>
+                    <select id="action-team-filter" class="glass-control" aria-label="Team filter">
+                        <option value="ALL">全部球队</option>
+                    </select>
+                    <select id="action-season-filter" class="glass-control" aria-label="Season context filter">
+                        <option value="ALL">全部赛季</option>
+                    </select>
                     <select id="action-minutes-filter" class="glass-control" aria-label="Minimum estimated minutes">
                         <option value="0">0 min</option>
                         <option value="180">180 min</option>
@@ -457,6 +463,7 @@
                         <option value="900">900 min</option>
                     </select>
                 </div>
+                <div class="action-identity-rail" id="action-identity-note" hidden></div>
                 <div class="layout-2">
                     <article class="liquid-panel chart-panel">
                         <div class="panel-head">
@@ -487,6 +494,18 @@
                         </ul>
                     </article>
                 </div>
+                <dialog class="workspace-dialog action-detail-dialog" id="action-detail-dialog" aria-labelledby="action-detail-title">
+                    <div class="workspace-dialog-shell">
+                        <div class="workspace-dialog-head">
+                            <div>
+                                <p class="eyebrow" id="action-detail-kicker">Action value</p>
+                                <h3 id="action-detail-title">Player detail</h3>
+                            </div>
+                            <button class="icon-button workspace-dialog-close" id="action-detail-close" type="button" aria-label="Close">×</button>
+                        </div>
+                        <div id="action-detail-content"></div>
+                    </div>
+                </dialog>
             </section>
 
             <section class="view" id="view-reports" aria-label="reports">
@@ -1120,6 +1139,7 @@
     <script src="tactical-board.js"></script>
     <script src="tactical-renderer.js"></script>
     <script src="scouting-workspace.js"></script>
+    <script src="action-value-explorer.js"></script>
     <script src="config.js"></script>
     <script src="app.js"></script>
 </body>

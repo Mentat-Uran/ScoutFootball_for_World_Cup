@@ -786,17 +786,31 @@ def get_action_value_summary(
     offset: int = 0,
     full: bool = False,
 ) -> dict[str, Any]:
-    """Return action value data combining xT and VAEP sources.
+    """Return independently paged xT and VAEP action-value rows.
 
-    When full=True, returns the complete merged dataset (xT + VAEP).
-    Otherwise returns a sample (legacy behavior).
-    Supports pagination via limit/offset.
+    xT is a player-team-season artifact.  VAEP is currently a player-team
+    career aggregate and receives display identity plus season *context* from
+    the xT artifact.  The two models are kept in separate arrays because
+    joining them on a display name would blur those different granularities.
+
+    ``full`` is retained for backwards compatibility with the static exporter;
+    ``limit`` and ``offset`` apply independently to each model section.
     """
     import pandas as pd
 
+    from scoutfootball.action_value.identity import (
+        attach_team_names,
+        build_identity_coverage_report,
+        enrich_vaep_identities,
+    )
+
+    del full  # Compatibility flag; callers still control row count with limit.
+    limit = max(0, min(int(limit), 20_000))
+    offset = max(0, int(offset))
     settings = _settings()
     xt_path = settings.data_root / "gold" / "feature_store" / "player_action_value.parquet"
     vaep_path = settings.data_root / "gold" / "feature_store" / "player_vaep.parquet"
+    matches_path = settings.raw_root / "statsbomb_open" / "matches_all.parquet"
 
     # Load xT data
     xt_df = pd.DataFrame()
@@ -811,6 +825,13 @@ def get_action_value_summary(
     if vaep_path.exists():
         try:
             vaep_df = _read_parquet(vaep_path)
+        except Exception:
+            pass
+
+    matches_df = pd.DataFrame()
+    if matches_path.exists():
+        try:
+            matches_df = _read_parquet(matches_path)
         except Exception:
             pass
 
@@ -853,153 +874,29 @@ def get_action_value_summary(
             "players": working.head(limit).to_dict(orient="records"),
         })
 
-    # Merge xT + VAEP
-    # Check if VAEP has usable player_name (non-empty)
-    vaep_has_names = (
-        not vaep_df.empty
-        and "player_name" in vaep_df.columns
-        and vaep_df["player_name"].replace("", pd.NA).notna().any()
-    )
+    xt_part = attach_team_names(xt_df, matches_df)
+    vaep_part = enrich_vaep_identities(vaep_df, xt_df, matches_df)
+    if "xt_per_90" in xt_part.columns:
+        xt_part = xt_part.sort_values("xt_per_90", ascending=False)
+    if "vaep_per_90" in vaep_part.columns:
+        vaep_part = vaep_part.sort_values("vaep_per_90", ascending=False)
 
-    if not vaep_df.empty and not vaep_has_names:
-        # VAEP lacks usable player_name — return as separate sections
-        xt_cols = [
-            "player_name", "season", "team_id", "competition",
-            "n_actions", "n_matches", "estimated_minutes",
-            "xt_total", "xt_per_90",
-            "passes_per_90", "shots_per_90", "carries_per_90", "dribbles_per_90",
-            "final_third_per_90", "penalty_area_per_90",
-            "pass_completion_rate", "forward_pass_rate",
-        ]
-        xt_select = [c for c in xt_cols if c in xt_df.columns]
-        xt_part = xt_df[xt_select].copy()
-
-        # Sort xT by xt_per_90 desc
-        if "xt_per_90" in xt_part.columns:
-            xt_part = xt_part.sort_values("xt_per_90", ascending=False)
-
-        # Aggregate VAEP by player_id for summary
-        vaep_summary_cols = [
-            "player_id", "vaep_total", "vaep_per_90", "vaep_mean",
-            "n_actions", "n_matches", "estimated_minutes", "minutes_90",
-        ]
-        vaep_select = [c for c in vaep_summary_cols if c in vaep_df.columns]
-        vaep_summary = vaep_df[vaep_select].copy()
-        numeric_cols = vaep_summary.select_dtypes(include=["number"]).columns.tolist()
-        if "player_id" in vaep_summary.columns and numeric_cols:
-            vaep_summary = vaep_summary.groupby("player_id", as_index=False)[numeric_cols].mean()
-        if "vaep_per_90" in vaep_summary.columns:
-            vaep_summary = vaep_summary.sort_values("vaep_per_90", ascending=False)
-
-        total_count = len(xt_part) + len(vaep_summary)
-        xt_page = xt_part.iloc[offset : offset + limit]
-        vaep_offset = max(0, offset - len(xt_part))
-        vaep_limit = max(0, limit - len(xt_page))
-        vaep_page = vaep_summary.iloc[vaep_offset : vaep_offset + vaep_limit]
-
-        metrics: dict[str, Any] = {
-            "total_rows": total_count,
-            "xt_rows": len(xt_part),
-            "vaep_rows": len(vaep_summary),
-        }
-        if "xt_per_90" in xt_part.columns:
-            metrics["mean_xt_per_90"] = round(float(xt_part["xt_per_90"].dropna().mean()), 4)
-            metrics["players_with_xt"] = int(xt_part["xt_per_90"].notna().sum())
-        if "vaep_per_90" in vaep_summary.columns:
-            metrics["mean_vaep_per_90"] = round(
-                float(vaep_summary["vaep_per_90"].dropna().mean()), 4
-            )
-            metrics["players_with_vaep"] = int(vaep_summary["vaep_per_90"].notna().sum())
-
-        return _clean_json_value({
-            "status": "ok",
-            "count": total_count,
-            "offset": offset,
-            "limit": limit,
-            "data_source": "StatsBomb Open Data + xT/VAEP model",
-            "attribution_required": _STATSBOMB_ATTRIBUTION,
-            "metrics": metrics,
-            "players": xt_page.to_dict(orient="records"),
-            "xt_players": xt_page.to_dict(orient="records"),
-            "vaep_players": vaep_page.to_dict(orient="records"),
-        })
-
-    # Both have usable player_name — merge on player_name (+ season if both have it)
-    xt_cols = [
-        "player_name", "season", "team_id", "competition",
-        "n_actions", "n_matches", "estimated_minutes",
-        "xt_total", "xt_per_90",
-        "passes_per_90", "shots_per_90", "carries_per_90", "dribbles_per_90",
-        "final_third_per_90", "penalty_area_per_90",
-        "pass_completion_rate", "forward_pass_rate",
-    ]
-    vaep_cols = [
-        "player_name", "season",
-        "vaep_total", "vaep_per_90", "vaep_mean",
-        "n_actions", "n_matches", "estimated_minutes",
-        "minutes_90",
-    ]
-
-    xt_select = [c for c in xt_cols if c in xt_df.columns]
-    vaep_select = [c for c in vaep_cols if c in vaep_df.columns]
-
-    xt_part = xt_df[xt_select].copy()
-    vaep_part = vaep_df[vaep_select].copy()
-
-    # If VAEP lacks season, aggregate to player level
-    if not vaep_part.empty and "season" not in vaep_part.columns:
-        agg_dict: dict[str, Any] = {}
-        for c in vaep_part.columns:
-            if c == "player_name":
-                continue
-            if vaep_part[c].dtype in ["float64", "float32", "int64", "int32"]:
-                agg_dict[c] = "mean"
-            else:
-                agg_dict[c] = "first"
-        if agg_dict:
-            vaep_part = vaep_part.groupby("player_name", as_index=False).agg(agg_dict)
-
-    # Rename overlapping columns in vaep to avoid collision
-    overlap = set(xt_select) - {"player_name", "season"}
-    rename_map = {c: f"vaep_{c}" for c in vaep_select if c in overlap}
-    vaep_part = vaep_part.rename(columns=rename_map)
-
-    # Determine merge keys
-    merge_keys = ["player_name"]
-    if "season" in xt_part.columns and "season" in vaep_part.columns:
-        merge_keys.append("season")
-
-    if not xt_part.empty and not vaep_part.empty:
-        merged = pd.merge(xt_part, vaep_part, on=merge_keys, how="outer")
-    elif not xt_part.empty:
-        merged = xt_part
-    else:
-        merged = vaep_part
-
-    if merged.empty:
-        return {"status": "no_data", "count": 0, "players": []}
-
-    # Sort by xt_per_90 descending (or vaep_per_90 as fallback)
-    sort_col = "xt_per_90" if "xt_per_90" in merged.columns else "vaep_per_90"
-    if sort_col in merged.columns:
-        merged = merged.sort_values(sort_col, ascending=False)
-
-    total_count = len(merged)
-    page = merged.iloc[offset : offset + limit]
-
-    # Summary metrics
+    total_count = len(xt_part) + len(vaep_part)
+    xt_page = xt_part.iloc[offset : offset + limit]
+    vaep_page = vaep_part.iloc[offset : offset + limit]
     metrics: dict[str, Any] = {
         "total_rows": total_count,
-        "xt_rows": len(xt_df),
-        "vaep_rows": len(vaep_df),
-        "merged_rows": total_count,
+        "xt_rows": len(xt_part),
+        "vaep_rows": len(vaep_part),
     }
-    if "xt_per_90" in merged.columns:
-        metrics["mean_xt_per_90"] = round(float(merged["xt_per_90"].dropna().mean()), 4)
-        metrics["players_with_xt"] = int(merged["xt_per_90"].notna().sum())
-    if "vaep_per_90" in merged.columns:
-        metrics["mean_vaep_per_90"] = round(float(merged["vaep_per_90"].dropna().mean()), 4)
-        metrics["players_with_vaep"] = int(merged["vaep_per_90"].notna().sum())
+    if "xt_per_90" in xt_part.columns and xt_part["xt_per_90"].notna().any():
+        metrics["mean_xt_per_90"] = round(float(xt_part["xt_per_90"].dropna().mean()), 4)
+        metrics["players_with_xt"] = int(xt_part["xt_per_90"].notna().sum())
+    if "vaep_per_90" in vaep_part.columns and vaep_part["vaep_per_90"].notna().any():
+        metrics["mean_vaep_per_90"] = round(
+            float(vaep_part["vaep_per_90"].dropna().mean()), 4
+        )
+        metrics["players_with_vaep"] = int(vaep_part["vaep_per_90"].notna().sum())
 
     return _clean_json_value({
         "status": "ok",
@@ -1008,8 +905,15 @@ def get_action_value_summary(
         "limit": limit,
         "data_source": "StatsBomb Open Data + xT/VAEP model",
         "attribution_required": _STATSBOMB_ATTRIBUTION,
+        "model_granularity": {
+            "xt": "player_team_season",
+            "vaep": "player_team_career",
+        },
         "metrics": metrics,
-        "players": page.to_dict(orient="records"),
+        "identity_coverage": build_identity_coverage_report(vaep_part),
+        "players": xt_page.to_dict(orient="records"),
+        "xt_players": xt_page.to_dict(orient="records"),
+        "vaep_players": vaep_page.to_dict(orient="records"),
     })
 
 

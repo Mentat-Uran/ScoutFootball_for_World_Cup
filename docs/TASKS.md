@@ -247,7 +247,9 @@ ScoutFootball 的长期形态是本地优先的足球数据研究平台，而不
 - [x] 世界杯页状态 pill 已动态化。
 - [ ] 将球探/动作价值真实浏览器流程加入 CI，覆盖 API、静态、空数据和移动断点。
 - [x] 建立版本化 scouting workspace v1.1 导入/导出和审计字段：支持 workspace ID、revision、时间戳、导入预览、同键冲突检测、安全合并和显式替换；仍不增加生产写 API。
-- [ ] 补齐 VAEP `player_id -> player_name/team/season` 映射与未映射覆盖率。
+- [x] 补齐 VAEP `player_id -> player_name/team/season` 映射与未映射覆盖率。
+- [x] 动作价值多维下钻：球队/赛季/赛事/分钟/搜索联合筛选，筛选选项动态聚合，身份覆盖率摘要，未映射球员回退显示 ID（`frontend/action-value-explorer.js`）。
+- [ ] 增加动作类型下钻（pass/carry/shot 拆分）和球员级时间序列；在评分融合前完成独立评估。
 
 ### P1.2：测试与静态导出可靠性（2026-06-23）
 

@@ -152,8 +152,8 @@ def create_app() -> FastAPI:
         return get_value_summary()
 
     @app.get("/action-values")
-    def action_values(limit: int = 20):
-        return get_action_value_summary(limit=limit)
+    def action_values(limit: int = 20, offset: int = 0):
+        return get_action_value_summary(limit=limit, offset=offset)
 
     @app.get("/ratings")
     def ratings(

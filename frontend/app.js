@@ -767,6 +767,8 @@ const appState = {
     actionMode: "xt",
     actionQuery: "",
     actionCompetition: "ALL",
+    actionTeam: "ALL",
+    actionSeason: "ALL",
     actionMinMinutes: 450,
 };
 
@@ -2858,29 +2860,24 @@ function renderActions() {
         : (actionValueSummary.xt_players || actionValueSummary.players || []);
     const metricKey = mode === "vaep" ? "vaep_per_90" : "xt_per_90";
     const legacyMetricKey = mode === "xt" ? "xT_per_90" : metricKey;
-    const query = appState.actionQuery.trim().toLowerCase();
-    const players = sourceRows.filter((player) => {
-        const minutes = Number(player.estimated_minutes || player.minutes || 0);
-        const competition = String(player.competition || "");
-        const label = String(player.player_name || player.player_id || "");
-        const matchesQuery = !query || `${label} ${competition} ${player.season || ""}`.toLowerCase().includes(query);
-        const matchesCompetition = mode === "vaep" || appState.actionCompetition === "ALL" || competition === appState.actionCompetition;
-        return matchesQuery && matchesCompetition && minutes >= appState.actionMinMinutes;
-    }).sort((a, b) => Number(b[metricKey] ?? b[legacyMetricKey] ?? 0) - Number(a[metricKey] ?? a[legacyMetricKey] ?? 0));
+    const explorer = typeof ACTION_VALUE_EXPLORER !== "undefined" ? ACTION_VALUE_EXPLORER : null;
+    populateActionFilters(sourceRows);
+    const players = (explorer ? explorer.filterRows(sourceRows, {
+        query: appState.actionQuery,
+        competition: appState.actionCompetition,
+        team: appState.actionTeam,
+        season: appState.actionSeason,
+        minimumMinutes: appState.actionMinMinutes,
+    }) : sourceRows).sort((a, b) => Number(b[metricKey] ?? b[legacyMetricKey] ?? 0) - Number(a[metricKey] ?? a[legacyMetricKey] ?? 0));
     const actionList = document.getElementById("action-list");
     const actionStatus = document.getElementById("action-status-pill");
     const metrics = actionValueSummary.metrics || {};
-
-    populateActionCompetitionFilter(sourceRows);
 
     document.querySelectorAll("[data-action-mode]").forEach((button) => {
         const active = button.dataset.actionMode === mode;
         button.classList.toggle("active", active);
         button.setAttribute("aria-pressed", active ? "true" : "false");
     });
-    const competitionSelect = document.getElementById("action-competition-filter");
-    if (competitionSelect) competitionSelect.disabled = mode === "vaep";
-
     const chartTitle = document.getElementById("action-chart-title");
     const listTitle = document.getElementById("action-list-title");
     if (chartTitle) chartTitle.textContent = mode === "vaep" ? "VAEP / 90" : "xT / 90";
@@ -2896,27 +2893,43 @@ function renderActions() {
     }
 
     const metricsEl = document.getElementById("action-metrics");
+    const identity = explorer
+        ? explorer.identitySummary(actionValueSummary.identity_coverage, sourceRows)
+        : { total: sourceRows.length, mapped: 0, unmapped: sourceRows.length, rate: 0 };
     if (metricsEl) {
+        const rowCount = mode === "vaep"
+            ? (metrics.vaep_rows ?? sourceRows.length)
+            : (metrics.xt_rows ?? sourceRows.length);
         const coverage = mode === "vaep"
-            ? (metrics.players_with_vaep ?? metrics.vaep_rows ?? sourceRows.length)
-            : (metrics.players_with_xt ?? metrics.xt_rows ?? sourceRows.length);
+            ? `${(identity.rate * 100).toFixed(1)}%`
+            : Number(metrics.players_with_xt ?? metrics.xt_rows ?? sourceRows.length).toLocaleString();
         const mean = mode === "vaep" ? metrics.mean_vaep_per_90 : metrics.mean_xt_per_90;
         metricsEl.innerHTML = `
-            <div><span class="metric-value">${Number(metrics.total_rows || actionValueSummary.count || sourceRows.length).toLocaleString()}</span><span>${escapeHtml(appState.lang === "zh" ? "动作价值行" : "action-value rows")}</span></div>
-            <div><span class="metric-value">${Number(coverage || 0).toLocaleString()}</span><span>${escapeHtml(mode === "vaep" ? "VAEP coverage" : "xT coverage")}</span></div>
+            <div><span class="metric-value">${Number(rowCount || 0).toLocaleString()}</span><span>${escapeHtml(mode === "vaep" ? (appState.lang === "zh" ? "球员-球队生涯行" : "player-team career rows") : (appState.lang === "zh" ? "球员-球队-赛季行" : "player-team-season rows"))}</span></div>
+            <div><span class="metric-value">${coverage}</span><span>${escapeHtml(mode === "vaep" ? (appState.lang === "zh" ? "身份完整映射" : "identity mapped") : "xT values")}</span></div>
             <div><span class="metric-value">${mean == null ? "–" : safeNum(mean, 3)}</span><span>${escapeHtml(appState.lang === "zh" ? "样本均值 / 90" : "sample mean / 90")}</span></div>`;
     }
 
+    const identityNote = document.getElementById("action-identity-note");
+    if (identityNote) {
+        identityNote.hidden = mode !== "vaep";
+        if (mode === "vaep") {
+            const seasonNote = actionValueSummary.identity_coverage?.season_context_semantics
+                || "Season labels are context only; VAEP is aggregated across each player-team career row.";
+            identityNote.innerHTML = `<strong>${identity.mapped.toLocaleString()} / ${identity.total.toLocaleString()}</strong> ${escapeHtml(appState.lang === "zh" ? "行已补齐球员、球队和赛季上下文" : "rows have player, team, and season context")} · ${escapeHtml(appState.lang === "zh" ? "未映射" : "unmapped")} ${identity.unmapped.toLocaleString()}<span>${escapeHtml(seasonNote)}</span>`;
+        }
+    }
+
     actionList.innerHTML = players.length > 0
-        ? players.map((player) => `
-            <div class="rank-item">
+        ? players.map((player, index) => `
+            <button class="rank-item action-rank-item" type="button" data-action-index="${index}" aria-label="${escapeAttr(`${actionPlayerLabel(player, mode)} details`)}">
                 <div>
                     <strong>${escapeHtml(actionPlayerLabel(player, mode))}</strong>
                     <span class="rank-meta">${escapeHtml(actionPlayerMeta(player, mode))}</span>
                     ${Number(player.estimated_minutes || player.minutes || 0) < 900 ? `<div class="sample-warning">${escapeHtml(appState.lang === "zh" ? "小样本，仅供研究" : "Small sample; research use only")}</div>` : ""}
                 </div>
                 <span class="status-pill status-medium">${safeNum(player[metricKey] ?? player[legacyMetricKey] ?? 0, 3)}</span>
-            </div>
+            </button>
         `).join("")
         : (() => {
             const loadFailed = dataLoadErrors.has("action-values");
@@ -2925,6 +2938,12 @@ function renderActions() {
                 : (appState.lang === "zh" ? "当前筛选没有动作价值样本" : "No action-value samples match the current filters");
             return `<div style="color:var(--text-muted);text-align:center;padding:1rem">${escapeHtml(msg)}</div>`;
         })();
+    actionList.querySelectorAll("[data-action-index]").forEach((button) => {
+        button.addEventListener("click", () => {
+            const player = players[Number(button.dataset.actionIndex)];
+            if (player) showActionValueDetail(player, mode);
+        });
+    });
 
     // StatsBomb Open Data attribution
     const attrEl = document.getElementById('action-attribution');
@@ -2997,15 +3016,38 @@ function renderActions() {
     }
 }
 
-function populateActionCompetitionFilter(rows) {
-    const select = document.getElementById("action-competition-filter");
-    if (!select) return;
-    const competitions = [...new Set((rows || []).map((row) => row.competition).filter(Boolean))].sort();
-    const previous = appState.actionCompetition;
-    select.innerHTML = `<option value="ALL">${escapeHtml(t("action_all_competitions"))}</option>`
-        + competitions.map((competition) => `<option value="${escapeAttr(competition)}">${escapeHtml(competition)}</option>`).join("");
-    appState.actionCompetition = competitions.includes(previous) ? previous : "ALL";
-    select.value = appState.actionCompetition;
+function setActionFilterOptions(selectId, values, previous, allLabel) {
+    const select = document.getElementById(selectId);
+    if (!select) return "ALL";
+    const next = values.includes(previous) ? previous : "ALL";
+    select.innerHTML = `<option value="ALL">${escapeHtml(allLabel)}</option>`
+        + values.map((value) => `<option value="${escapeAttr(value)}">${escapeHtml(value)}</option>`).join("");
+    select.value = next;
+    return next;
+}
+
+function populateActionFilters(rows) {
+    const options = typeof ACTION_VALUE_EXPLORER !== "undefined"
+        ? ACTION_VALUE_EXPLORER.filterOptions(rows)
+        : { competitions: [], teams: [], seasons: [] };
+    appState.actionCompetition = setActionFilterOptions(
+        "action-competition-filter",
+        options.competitions,
+        appState.actionCompetition,
+        t("action_all_competitions"),
+    );
+    appState.actionTeam = setActionFilterOptions(
+        "action-team-filter",
+        options.teams,
+        appState.actionTeam,
+        appState.lang === "zh" ? "全部球队" : "All teams",
+    );
+    appState.actionSeason = setActionFilterOptions(
+        "action-season-filter",
+        options.seasons,
+        appState.actionSeason,
+        appState.lang === "zh" ? "全部赛季" : "All seasons",
+    );
 }
 
 function actionPlayerLabel(player, mode) {
@@ -3015,13 +3057,55 @@ function actionPlayerLabel(player, mode) {
 
 function actionPlayerMeta(player, mode) {
     const parts = [];
-    if (player.competition) parts.push(player.competition);
-    if (player.season) parts.push(player.season);
+    const team = typeof ACTION_VALUE_EXPLORER !== "undefined" ? ACTION_VALUE_EXPLORER.rowTeam(player) : "";
+    const seasons = typeof ACTION_VALUE_EXPLORER !== "undefined" ? ACTION_VALUE_EXPLORER.rowSeasons(player) : [];
+    const competitions = typeof ACTION_VALUE_EXPLORER !== "undefined" ? ACTION_VALUE_EXPLORER.rowCompetitions(player) : [];
+    if (team) parts.push(team);
+    if (competitions.length) parts.push(competitions.join(" / "));
+    if (seasons.length) parts.push(seasons.length > 2 ? `${seasons[0]}–${seasons[seasons.length - 1]} (${seasons.length})` : seasons.join(" / "));
     if (player.estimated_minutes != null) parts.push(`${Math.round(Number(player.estimated_minutes || 0))}min`);
     if (player.n_matches != null) parts.push(`${Number(player.n_matches).toFixed(Number(player.n_matches) % 1 ? 1 : 0)} matches`);
     if (mode === "xt" && player.xt_total != null) parts.push(`xT ${Number(player.xt_total).toFixed(2)}`);
     if (mode === "vaep" && player.vaep_total != null) parts.push(`VAEP ${Number(player.vaep_total).toFixed(2)}`);
     return parts.join(" \u00B7 ");
+}
+
+function showActionValueDetail(player, mode) {
+    const dialog = document.getElementById("action-detail-dialog");
+    const title = document.getElementById("action-detail-title");
+    const kicker = document.getElementById("action-detail-kicker");
+    const content = document.getElementById("action-detail-content");
+    if (!dialog || !title || !content) return;
+
+    const explorer = typeof ACTION_VALUE_EXPLORER !== "undefined" ? ACTION_VALUE_EXPLORER : null;
+    const team = explorer ? explorer.rowTeam(player) : String(player.team_name || player.team_id || "–");
+    const seasons = explorer ? explorer.rowSeasons(player) : [player.season].filter(Boolean);
+    const competitions = explorer ? explorer.rowCompetitions(player) : [player.competition].filter(Boolean);
+    const metric = mode === "vaep" ? player.vaep_per_90 : (player.xt_per_90 ?? player.xT_per_90);
+    const total = mode === "vaep" ? player.vaep_total : player.xt_total;
+    const identityStatus = player.identity_status || (player.player_name ? "mapped" : "unmapped");
+    const facts = [
+        [appState.lang === "zh" ? "球队" : "Team", team || "–"],
+        [appState.lang === "zh" ? "赛季上下文" : "Season context", seasons.join(" · ") || "–"],
+        [appState.lang === "zh" ? "赛事" : "Competition", competitions.join(" · ") || "–"],
+        [appState.lang === "zh" ? "估算分钟" : "Estimated minutes", Math.round(Number(player.estimated_minutes || 0)).toLocaleString()],
+        [appState.lang === "zh" ? "比赛" : "Matches", Number(player.n_matches || 0).toLocaleString()],
+        [appState.lang === "zh" ? "动作" : "Actions", Number(player.n_actions || 0).toLocaleString()],
+    ];
+    if (kicker) kicker.textContent = mode === "vaep" ? "VAEP · player-team career" : "xT · player-team-season";
+    title.textContent = actionPlayerLabel(player, mode);
+    content.innerHTML = `
+        <div class="action-detail-score">
+            <div><span>${escapeHtml(`${mode === "vaep" ? "VAEP" : "xT"} / 90`)}</span><strong>${metric == null ? "–" : safeNum(metric, 3)}</strong></div>
+            <div><span>${escapeHtml(appState.lang === "zh" ? "累计价值" : "Total value")}</span><strong>${total == null ? "–" : safeNum(total, 2)}</strong></div>
+            <div><span>${escapeHtml(appState.lang === "zh" ? "身份状态" : "Identity")}</span><strong>${escapeHtml(identityStatus)}</strong></div>
+        </div>
+        <dl class="action-detail-facts">${facts.map(([label, value]) => `<div><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value)}</dd></div>`).join("")}</dl>
+        <div class="action-detail-boundary">${escapeHtml(mode === "vaep"
+            ? (appState.lang === "zh" ? "VAEP 按球员—球队生涯聚合；赛季仅用于说明底层覆盖范围，不能解释为单赛季 VAEP。" : "VAEP is aggregated by player-team career. Seasons describe source coverage and are not season-level VAEP values.")
+            : (appState.lang === "zh" ? "xT 行对应一个球员—球队—赛季样本。" : "Each xT row represents a player-team-season sample."))}</div>`;
+    if (typeof dialog.showModal === "function") dialog.showModal();
+    else dialog.setAttribute("open", "");
 }
 
 function generateXTHeatmapGrid(summary) {
@@ -4435,11 +4519,33 @@ function bindEvents() {
             renderActions();
         });
     }
+    const actionTeamFilter = document.getElementById("action-team-filter");
+    if (actionTeamFilter) {
+        actionTeamFilter.addEventListener("change", (e) => {
+            appState.actionTeam = e.target.value;
+            renderActions();
+        });
+    }
+    const actionSeasonFilter = document.getElementById("action-season-filter");
+    if (actionSeasonFilter) {
+        actionSeasonFilter.addEventListener("change", (e) => {
+            appState.actionSeason = e.target.value;
+            renderActions();
+        });
+    }
     const actionMinutesFilter = document.getElementById("action-minutes-filter");
     if (actionMinutesFilter) {
         actionMinutesFilter.addEventListener("change", (e) => {
             appState.actionMinMinutes = Number(e.target.value || 0);
             renderActions();
+        });
+    }
+    const actionDetailDialog = document.getElementById("action-detail-dialog");
+    const actionDetailClose = document.getElementById("action-detail-close");
+    if (actionDetailClose && actionDetailDialog) {
+        actionDetailClose.addEventListener("click", () => actionDetailDialog.close());
+        actionDetailDialog.addEventListener("click", (event) => {
+            if (event.target === actionDetailDialog) actionDetailDialog.close();
         });
     }
     window.addEventListener("resize", () => {

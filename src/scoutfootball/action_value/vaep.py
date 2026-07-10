@@ -16,6 +16,7 @@ Output must NOT be treated as full league action value data.
 """
 from __future__ import annotations
 
+import json
 import logging
 from pathlib import Path
 
@@ -24,6 +25,11 @@ import pandas as pd
 from sklearn.ensemble import GradientBoostingClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import roc_auc_score
+
+from scoutfootball.action_value.identity import (
+    build_identity_coverage_report,
+    enrich_vaep_identities,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +50,8 @@ ALL_RESULTS = ["success", "failure", "unknown"]
 # Default paths
 ACTIONS_PATH = Path("data/gold/feature_store/actions_all.parquet")
 OUTPUT_PATH = Path("data/gold/feature_store/player_vaep.parquet")
+XT_OUTPUT_PATH = Path("data/gold/feature_store/player_action_value.parquet")
+MATCHES_PATH = Path("data/raw/statsbomb_open/matches_all.parquet")
 
 
 def _goal_distance(x: np.ndarray, y: np.ndarray) -> np.ndarray:
@@ -641,31 +649,29 @@ def compute_vaep_from_actions(
     print(f"[VAEP] Player VAEP: {len(player_vaep)} rows")
     logger.info("Player VAEP: %d rows", len(player_vaep))
 
-    # 6b. Add player names from events if available
-    events_path = Path("data/raw/statsbomb_open/events_all.parquet")
-    if events_path.exists():
-        print("[VAEP] Adding player names from events...")
-        try:
-            events = pd.read_parquet(events_path, columns=["player_id", "player_name"])
-            events["player_id"] = events["player_id"].astype(str)
-            name_map = (
-                events.dropna(subset=["player_name"])
-                .drop_duplicates("player_id")
-                .rename(columns={"player_name": "player_name_event"})
-            )
-            player_vaep = player_vaep.merge(name_map, on="player_id", how="left")
-            player_vaep["player_name"] = player_vaep["player_name_event"].fillna(
-                player_vaep.get("player_name", "")
-            )
-            player_vaep["player_name"] = player_vaep["player_name"].fillna("")
-            player_vaep = player_vaep.drop(columns=["player_name_event"], errors="ignore")
-        except Exception as e:
-            logger.warning("Failed to add player names: %s", e)
+    # 6b. Add display identity and season context from exact StatsBomb keys.
+    # VAEP remains a player-team career aggregate; the season list is context,
+    # not a claim that the value belongs to one particular season.
+    xt_df = pd.read_parquet(XT_OUTPUT_PATH) if XT_OUTPUT_PATH.exists() else pd.DataFrame()
+    matches_df = pd.read_parquet(MATCHES_PATH) if MATCHES_PATH.exists() else pd.DataFrame()
+    player_vaep = enrich_vaep_identities(player_vaep, xt_df, matches_df)
+    identity_report = build_identity_coverage_report(player_vaep)
+    print(
+        "[VAEP] Identity coverage: "
+        f"{identity_report['mapped_rows']}/{identity_report['total_rows']} "
+        f"({identity_report['coverage_rate']:.1%})"
+    )
 
     # 7. Save
     output_path.parent.mkdir(parents=True, exist_ok=True)
     player_vaep.to_parquet(output_path, index=False)
+    coverage_path = output_path.with_name("player_vaep_identity_coverage.json")
+    coverage_path.write_text(
+        json.dumps(identity_report, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
     print(f"[VAEP] Saved player VAEP to {output_path} ({len(player_vaep)} rows)")
+    print(f"[VAEP] Saved identity coverage to {coverage_path}")
     logger.info("Saved player VAEP to %s (%d rows)", output_path, len(player_vaep))
 
     # Print top 10

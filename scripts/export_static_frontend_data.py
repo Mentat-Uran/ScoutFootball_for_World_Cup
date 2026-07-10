@@ -184,25 +184,12 @@ def export_predictions_meta() -> None:
 def export_action_values(limit: int) -> None:
     from scoutfootball.api import get_action_value_summary
 
-    # Export xT top-N
-    xt_data = get_action_value_summary(limit=limit, full=True)
-    # Also fetch VAEP by offsetting past all xT rows
-    xt_count = xt_data.get("metrics", {}).get("xt_rows", 0)
-    vaep_data = get_action_value_summary(limit=limit, offset=xt_count, full=True)
-
-    # Merge: use xT players + vaep players from the second call
-    merged = dict(xt_data)
-    if vaep_data.get("vaep_players"):
-        merged["vaep_players"] = vaep_data["vaep_players"]
-    if vaep_data.get("metrics", {}).get("mean_vaep_per_90") is not None:
-        merged.setdefault("metrics", {}).update({
-            k: v for k, v in vaep_data.get("metrics", {}).items()
-            if k.startswith("vaep")
-        })
-
-    _write_json(DATA_DIR / "action_values.json", merged)
-    xt_n = len(merged.get("xt_players", merged.get("players", [])))
-    vaep_n = len(merged.get("vaep_players", []))
+    # The API pages xT and VAEP independently, so one call exports the top-N
+    # rows for both granularities without a synthetic cross-model offset.
+    data = get_action_value_summary(limit=limit, full=True)
+    _write_json(DATA_DIR / "action_values.json", data)
+    xt_n = len(data.get("xt_players", data.get("players", [])))
+    vaep_n = len(data.get("vaep_players", []))
     print(f"  action_values.json (xt={xt_n}, vaep={vaep_n})")
 
 

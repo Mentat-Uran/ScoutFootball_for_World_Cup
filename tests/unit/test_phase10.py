@@ -269,3 +269,8 @@ class TestAPI:
         result = get_action_value_summary(limit=5)
         assert "status" in result
         assert "players" in result
+        if result["status"] == "ok":
+            assert len(result["xt_players"]) <= 5
+            assert len(result["vaep_players"]) <= 5
+            assert result["model_granularity"]["vaep"] == "player_team_career"
+            assert result["identity_coverage"]["total_rows"] == result["metrics"]["vaep_rows"]
