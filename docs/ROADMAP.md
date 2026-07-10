@@ -13,7 +13,7 @@ ScoutFootball 的目标是本地优先、可复现、可解释的足球研究与
 - Pipeline、FastAPI、Streamlit、静态 Liquid Glass 前端和桌面打包链路已存在。
 - 球探与动作价值导航已恢复。球探页读取 review queue/watchlist/shortlist，状态和备注保存在浏览器；动作价值页读取 xT/VAEP，并按分钟、赛事和模型筛选。
 - 静态发布快照与 API 使用相同前端契约；纯静态服务器的 API 404 会回退到 `frontend/data/`。
-- 当前主要边界：球探写入没有正式后端审计链；VAEP 部分产物只有 `player_id`、缺少稳定姓名映射；动作价值覆盖仅代表 StatsBomb Open Data 样本。
+- 当前主要边界：球探工作区已有显式启用的本地持久化和 revision/备份链，但没有身份认证、云同步或多人协作；动作价值比赛证据只覆盖 3 场跟踪样本。
 
 ## 3. 分阶段计划
 
@@ -34,7 +34,7 @@ ScoutFootball 的目标是本地优先、可复现、可解释的足球研究与
 目标：从“只看榜单”升级到可审阅、可导出、可回灌的本地工作流。
 
 1. 定义版本化 scouting workspace 文件：复核状态、备注、标签、快照 ID、操作者、时间戳和来源。
-2. 支持 workspace JSON/CSV 导入导出、冲突检测、watchlist diff 和审阅摘要；默认仍不启用远程写入。
+2. 支持 workspace JSON/CSV 导入导出、冲突检测、watchlist diff 和审阅摘要；本地 API revision/原子备份已交付，默认仍不启用远程写入。
 3. 将人工确认结果通过显式命令导入 `player_truth_labels.parquet`，模型预测字段与人工标签字段严格分离。
 4. 增加按位置、联赛、原因、置信度、评分变化的队列切片，以及模型运行间 diff。
 5. 报告页输出“需要人工判断的原因”，而不是只输出分数。

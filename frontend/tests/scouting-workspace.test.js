@@ -108,6 +108,25 @@ test("safe merge unions selections and lets the newer workspace resolve conflict
     assert.equal(summary.decision_count, 6);
 });
 
+test("server merge can adopt the persisted workspace identity", () => {
+    const local = workspace();
+    const persisted = workspace({
+        workspace_id: "persisted-workspace",
+        created_at: "2026-06-01T00:00:00.000Z",
+        updated_at: "2026-07-03T00:00:00.000Z",
+        revision: 9,
+        last_action: "server-save",
+    });
+
+    const merged = workspaceApi.mergeWorkspaces(local, persisted, {
+        workspaceId: persisted.audit.workspace_id,
+    });
+
+    assert.equal(merged.audit.workspace_id, "persisted-workspace");
+    assert.equal(merged.audit.created_at, persisted.audit.created_at);
+    assert.equal(merged.audit.imported_from, "local-workspace");
+});
+
 test("serialization round-trips into local state", () => {
     const original = workspace({ snapshot_player_keys: ["player_1"] });
     const parsed = workspaceApi.parseWorkspace(workspaceApi.serializeWorkspace(original));

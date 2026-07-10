@@ -14,6 +14,8 @@
         "manual-export",
         "import-merge",
         "import-replace",
+        "server-save",
+        "server-load",
     ]);
     const FORBIDDEN_KEYS = new Set(["__proto__", "prototype", "constructor"]);
 
@@ -275,16 +277,20 @@
         };
     }
 
-    function mergeWorkspaces(localWorkspace, incomingWorkspace) {
+    function mergeWorkspaces(localWorkspace, incomingWorkspace, options) {
         const local = normalizeWorkspace(localWorkspace);
         const incoming = normalizeWorkspace(incomingWorkspace);
         const analysis = analyzeConflict(local, incoming);
         const preferred = analysis.incoming_is_newer ? incoming : local;
         const secondary = analysis.incoming_is_newer ? local : incoming;
+        const targetWorkspaceId = cleanKey(options && options.workspaceId)
+            || local.audit.workspace_id;
+        const adoptingIncomingId = targetWorkspaceId === incoming.audit.workspace_id
+            && targetWorkspaceId !== local.audit.workspace_id;
         const now = new Date().toISOString();
         return createWorkspace({
-            workspace_id: local.audit.workspace_id,
-            created_at: local.audit.created_at,
+            workspace_id: targetWorkspaceId,
+            created_at: adoptingIncomingId ? incoming.audit.created_at : local.audit.created_at,
             updated_at: now,
             exported_at: now,
             revision: Math.min(
@@ -292,7 +298,9 @@
                 Number.MAX_SAFE_INTEGER,
             ),
             last_action: "import-merge",
-            imported_from: incoming.audit.workspace_id,
+            imported_from: adoptingIncomingId
+                ? local.audit.workspace_id
+                : incoming.audit.workspace_id,
             app_version: local.audit.app_version || incoming.audit.app_version,
             rating_snapshot_ids: mergeStringLists(
                 local.source.rating_snapshot_ids,

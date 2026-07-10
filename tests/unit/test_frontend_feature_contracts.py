@@ -64,6 +64,8 @@ def test_restored_workbenches_expose_filters_and_boundaries() -> None:
         "scout-export-csv",
         "scout-export-workspace",
         "scout-import-workspace",
+        "scout-server-save",
+        "scout-server-load",
         "scout-workspace-dialog",
         "action-search",
         "action-competition-filter",
@@ -88,6 +90,9 @@ def test_scouting_workspace_is_loaded_before_the_app_and_has_a_versioned_contrac
     assert "mergeWorkspaces" in workspace_js
     assert 'if (typeof SCOUTING_WORKSPACE !== "undefined") ensureScoutingWorkspaceMeta();' in app_js
     assert "Number.MAX_SAFE_INTEGER" in app_js
+    assert "saveScoutingWorkspaceToServer" in app_js
+    assert "loadLatestScoutingWorkspaceFromServer" in app_js
+    assert 'headers["If-Match"]' in app_js
 
 
 def test_static_server_404_continues_to_mapped_json_fallback() -> None:

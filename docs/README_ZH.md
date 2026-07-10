@@ -46,7 +46,7 @@ ScoutFootball 是本地优先的足球分析平台，把公开数据、手动导
 | **球员** (◇) | 球员池、雷达图、位置内百分位 | `/ratings`、`/players/{name}` API |
 | **身价** (€) | 身价偏离散点图、高估/低估排名 | `/value-summary` API |
 | **预测** (△) | 比赛预测、比分概率矩阵、交锋记录与近期状态 | `/predictions/{home}/{away}`、`/predictions/{home}/{away}/h2h` API |
-| **球探** (□) | 复核筛选、本地状态/备注、watchlist 快照、CSV 导出 | `/review-queue`、`/watchlist`、`/shortlist` API |
+| **球探** (□) | 复核筛选、本地状态/备注、版本化工作区导入导出、可选的冲突安全本地 API 持久化 | `/review-queue`、`/watchlist`、`/shortlist`、`/scouting-workspaces/*` |
 | **动作价值** (⌁) | xT/VAEP 排名、样本筛选、3 场样本的球员→比赛动作证据、战术板热区联动 | `/action-values`、`/action-values/evidence/{player_id}` API |
 | **报告** (▣) | 模型运行记录、后端契约、指标 | `/reports/model-runs` API |
 
@@ -86,6 +86,15 @@ PYTHONPATH=src uv run python -m scoutfootball train
 # 可选监督式 NN 候选；player_truth_labels 行数不足时会跳过
 PYTHONPATH=src uv run python -m scoutfootball train-rating-nn
 ```
+
+球探决策默认只保存在浏览器。需要同机后端持久化时显式启用：
+
+```powershell
+$env:SCOUTFOOTBALL_ENABLE_WORKSPACE_WRITES="1"
+uv run python -m scoutfootball serve --host 127.0.0.1 --port 8000
+```
+
+更新使用 `If-Match` 服务器 revision 防止静默覆盖，写入采用原子替换并保留上一版备份。默认拒绝非回环地址访问；`SCOUTFOOTBALL_ALLOW_REMOTE_WORKSPACE_WRITES=1` 只应在受信网络和明确理解风险后启用。该能力不是云同步或多人协作。
 
 ## 世界杯准备度
 

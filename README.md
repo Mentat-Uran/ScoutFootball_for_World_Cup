@@ -49,7 +49,7 @@ The `frontend/` directory contains a static analysis workbench with a consistent
 | **Players** (◇) | Player pool, radar charts, position percentiles | `/ratings`, `/players/{name}` API |
 | **Value** (€) | Value deviation scatter, over/under-valued rankings | `/value-summary` API |
 | **Matches** (△) | Match prediction, score probability matrix, head-to-head history and recent form | `/predictions/{home}/{away}`, `/predictions/{home}/{away}/h2h` API |
-| **Scouting** (□) | Review queue filters, local status/notes, watchlist snapshots, CSV plus versioned workspace import/export | `/review-queue`, `/watchlist`, `/shortlist` API + browser-local workspace JSON |
+| **Scouting** (□) | Review queue filters, local status/notes, versioned workspace import/export, optional conflict-safe local API persistence | `/review-queue`, `/watchlist`, `/shortlist`, `/scouting-workspaces/*` |
 | **Actions** (⌁) | xT/VAEP ranking, sample filters, 3-match player→match action evidence, tactical heatmap handoff | `/action-values`, `/action-values/evidence/{player_id}` API |
 | **Reports** (▣) | Model runs, backend contracts, metrics | `/reports/model-runs` API |
 
@@ -91,6 +91,22 @@ Notes:
 - Local/LAN deployments now default to same-origin API mode.
 - A plain static server falls back to the tracked JSON snapshot under `frontend/data/` when mapped API routes return 404.
 - Allow TCP `8000` through Windows Firewall, or choose another port if needed.
+
+### Optional local scouting workspace persistence
+
+Scouting decisions stay in browser storage by default. To explicitly enable
+audited save/load through a backend running on the same machine:
+
+```powershell
+$env:SCOUTFOOTBALL_ENABLE_WORKSPACE_WRITES="1"
+uv run python -m scoutfootball serve --host 127.0.0.1 --port 8000
+```
+
+The API validates the v1.x workspace contract, requires `If-Match` server
+revisions for updates, writes atomically, and keeps the previous record as an
+immutable backup under `data/reports/scouting/workspaces/backups/`. Non-loopback
+access remains denied unless `SCOUTFOOTBALL_ALLOW_REMOTE_WORKSPACE_WRITES=1` is
+also set deliberately. This is local persistence, not cloud or multi-user sync.
 
 ### Docker Deployment
 

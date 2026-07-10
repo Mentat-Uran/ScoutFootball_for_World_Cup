@@ -564,7 +564,7 @@
                     <div class="hero-copy">
                         <p class="eyebrow" data-i18n="scouting_kicker">本地优先决策台</p>
                         <h2 data-i18n="scouting_title">复核、观察与候选闭环</h2>
-                        <p class="feature-note" data-i18n="scouting_boundary">服务端队列只读；复核状态、备注和球员页手动选择保存在当前浏览器。</p>
+                        <p class="feature-note" data-i18n="scouting_boundary">服务端队列只读；决策默认保存在当前浏览器，可显式启用本地 API 持久化。</p>
                     </div>
                     <div class="feature-metric-strip" aria-label="Scouting queue summary">
                         <div><span class="metric-value" id="scout-review-count">0</span><span data-i18n="scouting_metric_review">待复核</span></div>
@@ -588,6 +588,8 @@
                     <button class="text-button" id="scout-export-csv" type="button">↧ <span data-i18n="export_csv">导出 CSV</span></button>
                     <button class="text-button" id="scout-export-workspace" type="button">▣ <span data-i18n="scout_workspace_export">导出工作区</span></button>
                     <button class="text-button" id="scout-import-workspace" type="button">↥ <span data-i18n="scout_workspace_import">导入工作区</span></button>
+                    <button class="text-button" id="scout-server-save" type="button" hidden>⇧ <span data-i18n="scout_workspace_server_save">保存到本地 API</span></button>
+                    <button class="text-button" id="scout-server-load" type="button" hidden>⇩ <span data-i18n="scout_workspace_server_load">从本地 API 加载</span></button>
                     <input id="scout-workspace-file" type="file" accept="application/json,.json" hidden>
                     <span class="toolbar-status" id="scout-snapshot-status" aria-live="polite"></span>
                 </div>

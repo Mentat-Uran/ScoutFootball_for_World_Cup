@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import json
 import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, Query, Request
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
@@ -46,6 +47,15 @@ from scoutfootball.api import (
     list_teams,
     search_players_and_teams,
 )
+from scoutfootball.storage.scouting_workspace import (
+    MAX_WORKSPACE_BYTES,
+    WORKSPACE_SCHEMA,
+    ScoutingWorkspaceStore,
+    WorkspaceStoreError,
+    is_loopback_client,
+    remote_workspace_access_enabled,
+    workspace_persistence_enabled,
+)
 
 _DEFAULT_CORS_ORIGINS = [
     "https://scoutfootball.vercel.app",
@@ -64,6 +74,66 @@ def _cors_origins() -> list[str]:
     if raw.strip():
         return [o.strip() for o in raw.split(",") if o.strip()]
     return _DEFAULT_CORS_ORIGINS
+
+
+def _scouting_workspace_store() -> ScoutingWorkspaceStore:
+    return ScoutingWorkspaceStore(_settings().report_root / "scouting" / "workspaces")
+
+
+def _workspace_access_allowed(request: Request) -> bool:
+    host = request.client.host if request.client else None
+    return is_loopback_client(host) or remote_workspace_access_enabled()
+
+
+def _require_workspace_access(request: Request) -> None:
+    if not workspace_persistence_enabled():
+        raise HTTPException(
+            status_code=403,
+            detail={"code": "workspace_persistence_disabled"},
+        )
+    if not _workspace_access_allowed(request):
+        raise HTTPException(
+            status_code=403,
+            detail={"code": "workspace_remote_access_denied"},
+        )
+
+
+def _workspace_error(exc: WorkspaceStoreError) -> HTTPException:
+    return HTTPException(
+        status_code=exc.http_status,
+        detail={"code": exc.code, **exc.metadata},
+    )
+
+
+def _parse_if_match(value: str | None) -> int | None:
+    if value is None or not value.strip():
+        return None
+    normalized = value.strip()
+    if normalized.startswith("W/"):
+        normalized = normalized[2:]
+    normalized = normalized.strip('"')
+    try:
+        revision = int(normalized)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "workspace_if_match_invalid"},
+        ) from exc
+    if revision < 0:
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "workspace_if_match_invalid"},
+        )
+    return revision
+
+
+def _workspace_record_response(record: dict) -> dict:
+    return {
+        "status": "ok",
+        "server_revision": record["server_revision"],
+        "stored_at": record["stored_at"],
+        "workspace": record["workspace"],
+    }
 
 
 @asynccontextmanager
@@ -264,6 +334,73 @@ def create_app() -> FastAPI:
     @app.get("/shortlist")
     def shortlist(limit: int = 100):
         return get_shortlist(limit=limit)
+
+    @app.get("/scouting-workspaces/capabilities")
+    def scouting_workspace_capabilities(request: Request):
+        configured = workspace_persistence_enabled()
+        accessible = _workspace_access_allowed(request)
+        return {
+            "status": "ok",
+            "enabled": configured and accessible,
+            "configured": configured,
+            "local_only": not remote_workspace_access_enabled(),
+            "access_denied": configured and not accessible,
+            "schema": WORKSPACE_SCHEMA,
+            "max_bytes": MAX_WORKSPACE_BYTES,
+            "concurrency": "if-match-server-revision",
+            "backup_policy": "immutable-before-update",
+        }
+
+    @app.get("/scouting-workspaces/latest")
+    def scouting_workspace_latest(request: Request):
+        _require_workspace_access(request)
+        try:
+            return _workspace_record_response(_scouting_workspace_store().latest())
+        except WorkspaceStoreError as exc:
+            raise _workspace_error(exc) from exc
+
+    @app.get("/scouting-workspaces")
+    def scouting_workspaces(request: Request, limit: int = Query(default=100, ge=1, le=100)):
+        _require_workspace_access(request)
+        records = _scouting_workspace_store().list_records(limit=limit)
+        return {"status": "ok", "count": len(records), "workspaces": records}
+
+    @app.get("/scouting-workspaces/{workspace_id}")
+    def scouting_workspace(workspace_id: str, request: Request):
+        _require_workspace_access(request)
+        try:
+            return _workspace_record_response(
+                _scouting_workspace_store().load(workspace_id)
+            )
+        except WorkspaceStoreError as exc:
+            raise _workspace_error(exc) from exc
+
+    @app.put("/scouting-workspaces/{workspace_id}")
+    async def save_scouting_workspace(workspace_id: str, request: Request):
+        _require_workspace_access(request)
+        body = await request.body()
+        if len(body) > MAX_WORKSPACE_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail={"code": "workspace_too_large"},
+            )
+        try:
+            payload = json.loads(body)
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise HTTPException(
+                status_code=400,
+                detail={"code": "workspace_json_invalid"},
+            ) from exc
+        expected_revision = _parse_if_match(request.headers.get("if-match"))
+        try:
+            record = _scouting_workspace_store().save(
+                workspace_id,
+                payload,
+                expected_revision=expected_revision,
+            )
+        except WorkspaceStoreError as exc:
+            raise _workspace_error(exc) from exc
+        return _workspace_record_response(record)
 
     @app.get("/model-runs")
     def model_runs():

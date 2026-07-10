@@ -66,7 +66,7 @@ const i18n = {
         snapshot: "快照",
         scouting_kicker: "本地优先决策台",
         scouting_title: "复核、观察与候选闭环",
-        scouting_boundary: "服务端队列只读；复核状态、备注和球员页手动选择保存在当前浏览器。",
+        scouting_boundary: "服务端队列只读；决策默认保存在当前浏览器，可显式启用本地 API 持久化。",
         teams_kicker: "球队实力分析",
         teams_title: "球队评分聚合与位置组实力",
         teams_note: "基于球员评分的分钟加权聚合，展示球队整体实力、位置组分布和核心球员。",
@@ -95,6 +95,8 @@ const i18n = {
         scouting_local_state: "本地状态",
         scout_workspace_export: "导出工作区",
         scout_workspace_import: "导入工作区",
+        scout_workspace_server_save: "保存到本地 API",
+        scout_workspace_server_load: "从本地 API 加载",
         scout_workspace_preview_kicker: "安全导入",
         scout_workspace_preview_title: "球探工作区预览",
         scout_workspace_merge: "安全合并",
@@ -312,7 +314,7 @@ const i18n = {
         snapshot: "Snapshot",
         scouting_kicker: "Local-first decision desk",
         scouting_title: "Review, monitor, decide",
-        scouting_boundary: "Server queues are read-only; review states, notes, and manual player selections stay in this browser.",
+        scouting_boundary: "Server queues are read-only. Decisions stay in this browser unless local API persistence is explicitly enabled.",
         teams_kicker: "Team Strength Analysis",
         teams_title: "Aggregated Ratings & Position Group Strength",
         teams_note: "Minutes-weighted aggregation of player ratings, showing overall team strength, position group distribution and key players.",
@@ -341,6 +343,8 @@ const i18n = {
         scouting_local_state: "Local state",
         scout_workspace_export: "Export workspace",
         scout_workspace_import: "Import workspace",
+        scout_workspace_server_save: "Save to local API",
+        scout_workspace_server_load: "Load from local API",
         scout_workspace_preview_kicker: "Safe import",
         scout_workspace_preview_title: "Scouting workspace preview",
         scout_workspace_merge: "Safe merge",
@@ -663,6 +667,13 @@ let modelRuns = { count: 0, runs: [] };
 let watchlistData = [];
 let shortlistData = [];
 let actionValueSummary = { status: "no_data", players: [], metrics: {} };
+let scoutingWorkspaceCapabilities = {
+    enabled: false,
+    configured: false,
+    local_only: true,
+};
+let scoutingWorkspaceServerId = null;
+let scoutingWorkspaceServerRevision = null;
 let actionValueEvidenceIndex = {
     status: "no_data",
     coverage: {},
@@ -2804,6 +2815,18 @@ async function fetchShortlist() {
         console.warn("Failed to fetch shortlist:", err);
         dataLoadErrors.add("shortlist");
         return [];
+    }
+}
+
+async function fetchScoutingWorkspaceCapabilities() {
+    try {
+        const data = await fetchJson("/scouting-workspaces/capabilities");
+        return data && typeof data === "object"
+            ? data
+            : { enabled: false, configured: false, local_only: true };
+    } catch (err) {
+        console.warn("Scouting workspace persistence is unavailable:", err);
+        return { enabled: false, configured: false, local_only: true };
     }
 }
 
@@ -5490,6 +5513,14 @@ function bindEvents() {
             if (file) await previewScoutingWorkspaceImport(file);
         });
     }
+    const scoutServerSaveButton = document.getElementById("scout-server-save");
+    if (scoutServerSaveButton) {
+        scoutServerSaveButton.addEventListener("click", saveScoutingWorkspaceToServer);
+    }
+    const scoutServerLoadButton = document.getElementById("scout-server-load");
+    if (scoutServerLoadButton) {
+        scoutServerLoadButton.addEventListener("click", loadLatestScoutingWorkspaceFromServer);
+    }
     const scoutWorkspaceDialog = document.getElementById("scout-workspace-dialog");
     const scoutWorkspaceCancel = document.getElementById("scout-workspace-cancel");
     const scoutWorkspaceMerge = document.getElementById("scout-workspace-merge");
@@ -6787,7 +6818,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     loadWatchlistNotes();
 
     // Load real data from API in parallel
-    const [ratingsData, meta, artifacts, teams, valueData, reviewData, predictionArtifact, predictionCalibrationData, runs, watchlistRows, shortlistRows, actionValues, actionEvidenceIndex, licenseResp] = await Promise.all([
+    const [ratingsData, meta, artifacts, teams, valueData, reviewData, predictionArtifact, predictionCalibrationData, runs, watchlistRows, shortlistRows, actionValues, actionEvidenceIndex, workspaceCapabilities, licenseResp] = await Promise.all([
         fetchRatings(),
         fetchRatingsMeta(),
         fetchArtifacts(),
@@ -6801,6 +6832,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         fetchShortlist(),
         fetchActionValues(),
         fetchActionValueEvidenceIndex(),
+        fetchScoutingWorkspaceCapabilities(),
         fetchLicense(),
     ]);
 
@@ -6816,7 +6848,9 @@ document.addEventListener("DOMContentLoaded", async () => {
     shortlistData = shortlistRows;
     actionValueSummary = actionValues;
     actionValueEvidenceIndex = actionEvidenceIndex;
+    scoutingWorkspaceCapabilities = workspaceCapabilities;
     licenseData = licenseResp;
+    applyScoutingWorkspaceCapabilities();
     if (players.length > 0) {
         appState.selectedPlayerKey = players[0].key;
     }
@@ -7055,15 +7089,144 @@ function renderScoutingWorkspaceStatus() {
     const summary = SCOUTING_WORKSPACE.summarizeWorkspace(workspace);
     const locale = appState.lang === "zh" ? "zh-CN" : "en-US";
     const updated = new Date(summary.updated_at).toLocaleString(locale);
-    const scope = appState.lang === "zh" ? "仅当前浏览器" : "this browser only";
+    const serverScope = scoutingWorkspaceCapabilities.enabled
+        ? (
+            scoutingWorkspaceServerRevision == null
+            || scoutingWorkspaceServerId !== workspace.audit.workspace_id
+            ? (appState.lang === "zh" ? "本地 API 可用" : "local API ready")
+            : `${appState.lang === "zh" ? "本地 API" : "local API"} rev ${scoutingWorkspaceServerRevision}`
+        )
+        : (appState.lang === "zh" ? "仅当前浏览器" : "this browser only");
     const label = document.createElement("strong");
     label.textContent = `Workspace v${SCOUTING_WORKSPACE.VERSION}`;
     status.replaceChildren(
         label,
         document.createTextNode(
-            ` · rev ${summary.revision} · ${summary.decision_count} ${appState.lang === "zh" ? "项决策" : "decisions"} · ${updated} · ${scope}`,
+            ` · rev ${summary.revision} · ${summary.decision_count} ${appState.lang === "zh" ? "项决策" : "decisions"} · ${updated} · ${serverScope}`,
         ),
     );
+}
+
+function applyScoutingWorkspaceCapabilities() {
+    const enabled = Boolean(scoutingWorkspaceCapabilities.enabled);
+    for (const id of ["scout-server-save", "scout-server-load"]) {
+        const button = document.getElementById(id);
+        if (button) button.hidden = !enabled;
+    }
+    renderScoutingWorkspaceStatus();
+}
+
+async function scoutingWorkspaceBackendRequest(path, options = {}) {
+    const response = await fetch(`${API_BASE}${path}`, {
+        ...options,
+        signal: AbortSignal.timeout(8_000),
+    });
+    let data = {};
+    try {
+        data = await response.json();
+    } catch {
+        data = {};
+    }
+    if (!response.ok) {
+        const detail = data && typeof data.detail === "object" ? data.detail : {};
+        const error = new Error(detail.code || `workspace_http_${response.status}`);
+        error.status = response.status;
+        error.currentRevision = detail.current_revision;
+        throw error;
+    }
+    return data;
+}
+
+function workspaceForServerSave() {
+    const current = buildCurrentScoutingWorkspace();
+    const state = SCOUTING_WORKSPACE.toLocalState(current);
+    const now = new Date().toISOString();
+    return SCOUTING_WORKSPACE.createWorkspace({
+        workspace_id: current.audit.workspace_id,
+        created_at: current.audit.created_at,
+        updated_at: now,
+        exported_at: now,
+        revision: current.audit.revision + 1,
+        last_action: "server-save",
+        imported_from: current.audit.imported_from,
+        app_version: APP_VERSION,
+        rating_snapshot_ids: current.source.rating_snapshot_ids,
+        review_statuses: state.review_statuses,
+        shortlist_notes: state.shortlist_notes,
+        watchlist_notes: state.watchlist_notes,
+        watchlist: state.watchlist,
+        shortlist: state.shortlist,
+        snapshot_player_keys: state.snapshot_player_keys,
+        snapshot_saved_at: state.snapshot_saved_at,
+    });
+}
+
+async function saveScoutingWorkspaceToServer() {
+    try {
+        const workspace = workspaceForServerSave();
+        const headers = { "Content-Type": "application/json" };
+        if (
+            scoutingWorkspaceServerRevision != null
+            && scoutingWorkspaceServerId === workspace.audit.workspace_id
+        ) {
+            headers["If-Match"] = `"${scoutingWorkspaceServerRevision}"`;
+        }
+        const result = await scoutingWorkspaceBackendRequest(
+            `/scouting-workspaces/${encodeURIComponent(workspace.audit.workspace_id)}`,
+            {
+                method: "PUT",
+                headers,
+                body: SCOUTING_WORKSPACE.serializeWorkspace(workspace),
+            },
+        );
+        persistScoutingWorkspace(workspace);
+        scoutingWorkspaceServerId = workspace.audit.workspace_id;
+        scoutingWorkspaceServerRevision = Number(result.server_revision);
+        renderScouting();
+        setScoutingWorkspaceMessage(
+            appState.lang === "zh"
+                ? `已保存到本地 API · rev ${scoutingWorkspaceServerRevision}`
+                : `Saved to local API · rev ${scoutingWorkspaceServerRevision}`,
+        );
+    } catch (error) {
+        if (error.status === 409 || error.status === 428) {
+            try {
+                const workspaceId = buildCurrentScoutingWorkspace().audit.workspace_id;
+                const remote = await scoutingWorkspaceBackendRequest(
+                    `/scouting-workspaces/${encodeURIComponent(workspaceId)}`,
+                );
+                showScoutingWorkspacePreview(
+                    SCOUTING_WORKSPACE.normalizeWorkspace(remote.workspace),
+                    appState.lang === "zh" ? "本地 API 冲突版本" : "Conflicting local API version",
+                    remote,
+                );
+                setScoutingWorkspaceMessage(
+                    appState.lang === "zh"
+                        ? "检测到服务器版本冲突；请预览合并后再次保存"
+                        : "Server revision conflict; preview and merge before saving again",
+                    true,
+                );
+                return;
+            } catch (loadError) {
+                setScoutingWorkspaceMessage(workspaceErrorMessage(loadError), true);
+                return;
+            }
+        }
+        setScoutingWorkspaceMessage(workspaceErrorMessage(error), true);
+    }
+}
+
+async function loadLatestScoutingWorkspaceFromServer() {
+    try {
+        const record = await scoutingWorkspaceBackendRequest("/scouting-workspaces/latest");
+        showScoutingWorkspacePreview(
+            SCOUTING_WORKSPACE.normalizeWorkspace(record.workspace),
+            appState.lang === "zh" ? "本地 API 最新版本" : "Latest local API workspace",
+            record,
+        );
+    } catch (error) {
+        setScoutingWorkspaceMessage(workspaceErrorMessage(error), true);
+    }
 }
 
 function setScoutingWorkspaceMessage(message, isError = false) {
@@ -7086,6 +7249,11 @@ function workspaceErrorMessage(error) {
         workspace_not_object: zh ? "工作区根节点必须是对象" : "Workspace root must be an object",
         workspace_schema_invalid: zh ? "工作区 schema 不匹配" : "Workspace schema does not match",
         workspace_version_unsupported: zh ? "不支持该工作区版本" : "Workspace version is unsupported",
+        workspace_not_found: zh ? "本地 API 中还没有工作区" : "No workspace is stored in the local API",
+        workspace_persistence_disabled: zh ? "本地 API 持久化未启用" : "Local API persistence is disabled",
+        workspace_remote_access_denied: zh ? "本地 API 拒绝远程工作区访问" : "Local API denied remote workspace access",
+        workspace_revision_conflict: zh ? "服务器版本冲突" : "Server revision conflict",
+        workspace_precondition_required: zh ? "保存前必须加载服务器版本" : "Load the server revision before saving",
     };
     return messages[code] || (zh ? `导入失败：${code}` : `Import failed: ${code}`);
 }
@@ -7130,29 +7298,39 @@ function workspaceSummaryCard(title, summary) {
     </div>`;
 }
 
+function showScoutingWorkspacePreview(incoming, label, serverRecord = null) {
+    const local = buildCurrentScoutingWorkspace();
+    const analysis = SCOUTING_WORKSPACE.analyzeConflict(local, incoming);
+    pendingScoutingWorkspaceImport = { incoming, local, analysis, serverRecord };
+    const preview = document.getElementById("scout-workspace-preview");
+    const dialog = document.getElementById("scout-workspace-dialog");
+    if (!preview || !dialog) throw new Error("workspace_dialog_unavailable");
+    const conflictText = analysis.total_conflicts > 0
+        ? (appState.lang === "zh"
+            ? `检测到 ${analysis.status_conflicts} 个状态冲突和 ${analysis.note_conflicts} 个备注冲突。安全合并会保留两边条目，并以更新时间较新的工作区解决同键冲突。`
+            : `Found ${analysis.status_conflicts} status conflicts and ${analysis.note_conflicts} note conflicts. Safe merge keeps entries from both sides and uses the newer workspace for same-key conflicts.`)
+        : (appState.lang === "zh"
+            ? "未检测到同键冲突。仍会先预览，不会自动覆盖当前浏览器状态。"
+            : "No same-key conflicts detected. The import is still previewed and never overwrites browser state automatically.");
+    const serverText = serverRecord
+        ? ` · ${appState.lang === "zh" ? "服务器" : "server"} rev ${Number(serverRecord.server_revision)}`
+        : "";
+    preview.innerHTML = `<div class="workspace-preview-grid">
+        ${workspaceSummaryCard(appState.lang === "zh" ? "当前浏览器" : "Current browser", analysis.local)}
+        ${workspaceSummaryCard(`${label}${serverText}`, analysis.incoming)}
+    </div><p class="workspace-conflict-note">${escapeHtml(conflictText)}</p>`;
+    if (typeof dialog.showModal === "function") dialog.showModal();
+    else dialog.setAttribute("open", "");
+}
+
 async function previewScoutingWorkspaceImport(file) {
     try {
         if (file.size > SCOUTING_WORKSPACE.MAX_BYTES) throw new Error("workspace_too_large");
         const incoming = SCOUTING_WORKSPACE.parseWorkspace(await file.text());
-        const local = buildCurrentScoutingWorkspace();
-        const analysis = SCOUTING_WORKSPACE.analyzeConflict(local, incoming);
-        pendingScoutingWorkspaceImport = { incoming, local, analysis };
-        const preview = document.getElementById("scout-workspace-preview");
-        const dialog = document.getElementById("scout-workspace-dialog");
-        if (!preview || !dialog) throw new Error("workspace_dialog_unavailable");
-        const conflictText = analysis.total_conflicts > 0
-            ? (appState.lang === "zh"
-                ? `检测到 ${analysis.status_conflicts} 个状态冲突和 ${analysis.note_conflicts} 个备注冲突。安全合并会保留两边条目，并以更新时间较新的工作区解决同键冲突。`
-                : `Found ${analysis.status_conflicts} status conflicts and ${analysis.note_conflicts} note conflicts. Safe merge keeps entries from both sides and uses the newer workspace for same-key conflicts.`)
-            : (appState.lang === "zh"
-                ? "未检测到同键冲突。仍会先预览，不会自动覆盖当前浏览器状态。"
-                : "No same-key conflicts detected. The import is still previewed and never overwrites browser state automatically.");
-        preview.innerHTML = `<div class="workspace-preview-grid">
-            ${workspaceSummaryCard(appState.lang === "zh" ? "当前浏览器" : "Current browser", analysis.local)}
-            ${workspaceSummaryCard(file.name || (appState.lang === "zh" ? "导入文件" : "Import file"), analysis.incoming)}
-        </div><p class="workspace-conflict-note">${escapeHtml(conflictText)}</p>`;
-        if (typeof dialog.showModal === "function") dialog.showModal();
-        else dialog.setAttribute("open", "");
+        showScoutingWorkspacePreview(
+            incoming,
+            file.name || (appState.lang === "zh" ? "导入文件" : "Import file"),
+        );
     } catch (error) {
         pendingScoutingWorkspaceImport = null;
         setScoutingWorkspaceMessage(workspaceErrorMessage(error), true);
@@ -7221,12 +7399,20 @@ function persistScoutingWorkspace(workspace) {
 
 function applyScoutingWorkspaceImport(mode) {
     if (!pendingScoutingWorkspaceImport) return;
-    const { local, incoming } = pendingScoutingWorkspaceImport;
+    const { local, incoming, serverRecord } = pendingScoutingWorkspaceImport;
     try {
         const result = mode === "replace"
             ? replaceWorkspaceAudit(incoming)
-            : SCOUTING_WORKSPACE.mergeWorkspaces(local, incoming);
+            : SCOUTING_WORKSPACE.mergeWorkspaces(
+                local,
+                incoming,
+                serverRecord ? { workspaceId: incoming.audit.workspace_id } : undefined,
+            );
         persistScoutingWorkspace(result);
+        if (serverRecord) {
+            scoutingWorkspaceServerId = incoming.audit.workspace_id;
+            scoutingWorkspaceServerRevision = Number(serverRecord.server_revision);
+        }
         pendingScoutingWorkspaceImport = null;
         const dialog = document.getElementById("scout-workspace-dialog");
         if (dialog) dialog.close();
@@ -7234,8 +7420,12 @@ function applyScoutingWorkspaceImport(mode) {
         renderScouting();
         setScoutingWorkspaceMessage(
             appState.lang === "zh"
-                ? (mode === "replace" ? "已替换本地工作区" : "工作区已安全合并")
-                : (mode === "replace" ? "Local workspace replaced" : "Workspace safely merged"),
+                ? (serverRecord
+                    ? "本地 API 工作区已载入；后续保存将检查服务器版本"
+                    : (mode === "replace" ? "已替换本地工作区" : "工作区已安全合并"))
+                : (serverRecord
+                    ? "Local API workspace loaded; the next save will check its server revision"
+                    : (mode === "replace" ? "Local workspace replaced" : "Workspace safely merged")),
         );
     } catch (error) {
         setScoutingWorkspaceMessage(workspaceErrorMessage(error), true);

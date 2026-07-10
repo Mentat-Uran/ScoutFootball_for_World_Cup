@@ -549,6 +549,44 @@ Low-confidence players for review.
 ### GET /watchlist, /shortlist
 Scouting watchlist and shortlist.
 
+### Local scouting workspace persistence
+
+This opt-in store is disabled unless
+`SCOUTFOOTBALL_ENABLE_WORKSPACE_WRITES=1`. By default it accepts access only
+from loopback clients; non-loopback access additionally requires the explicit
+`SCOUTFOOTBALL_ALLOW_REMOTE_WORKSPACE_WRITES=1` override. It stores workspace
+JSON only and never mutates review queues, rating artifacts, or truth labels.
+
+- `GET /scouting-workspaces/capabilities`: always available; reports whether
+  persistence is configured and accessible to the current client.
+- `GET /scouting-workspaces`: metadata for up to 100 stored workspaces.
+- `GET /scouting-workspaces/latest`: latest stored record for explicit frontend
+  preview.
+- `GET /scouting-workspaces/{workspace_id}`: one record.
+- `PUT /scouting-workspaces/{workspace_id}`: create or update a record. Existing
+  records require `If-Match: "<server_revision>"`.
+
+Stored records use the envelope below; `server_revision` is separate from the
+browser workspace's `audit.revision`:
+
+```json
+{
+  "schema": "scoutfootball.scouting-workspace-record",
+  "version": "1.0",
+  "server_revision": 2,
+  "stored_at": "2026-07-11T01:00:00Z",
+  "workspace": { "schema": "scoutfootball.scouting-workspace", "version": "1.1.0" }
+}
+```
+
+The payload limit is 1 MB. Workspace IDs are path-safe and must match
+`workspace.audit.workspace_id`; dynamic maps, notes, selections, timestamps,
+statuses, nesting, and forbidden prototype keys are validated. New records get
+server revision 1. Updating without `If-Match` returns 428; a stale revision
+returns 409 with `current_revision`. Each successful update copies the previous
+record to `data/reports/scouting/workspaces/backups/`, then atomically replaces
+the live JSON file. No delete endpoint is exposed.
+
 ### GET /model-runs
 Model run registry with holdout metrics.
 
