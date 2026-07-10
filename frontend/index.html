@@ -30,6 +30,10 @@
                     <span class="nav-icon">◇</span>
                     <span data-i18n="nav_players">球员</span>
                 </button>
+                <button class="nav-action" data-view="compare" type="button">
+                    <span class="nav-icon">⟷</span>
+                    <span data-i18n="nav_compare">对比</span>
+                </button>
                 <button class="nav-action" data-view="value" type="button">
                     <span class="nav-icon">€</span>
                     <span data-i18n="nav_value">身价</span>
@@ -278,6 +282,81 @@
                         </div>
                     </article>
                 </div>
+            </section>
+
+            <section class="view" id="view-compare" aria-label="compare">
+                <article class="liquid-panel feature-hero">
+                    <div class="hero-copy">
+                        <p class="eyebrow" data-i18n="compare_kicker">球员对比</p>
+                        <h2 data-i18n="compare_title">双球员雷达叠加与指标差异</h2>
+                        <p class="feature-note" data-i18n="compare_note">选择两名球员进行位置百分位、雷达维度和关键统计的并排对比。</p>
+                    </div>
+                </article>
+
+                <article class="liquid-panel compact-panel">
+                    <div class="panel-head">
+                        <h3 data-i18n="compare_select">选择球员</h3>
+                    </div>
+                    <div style="display:flex;gap:var(--space);align-items:flex-end;flex-wrap:wrap;padding:var(--space)">
+                        <div style="flex:1;min-width:200px">
+                            <label style="font-size:0.72rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.04em" data-i18n="compare_player_a">球员 A</label>
+                            <input type="text" id="compare-input-a" class="filter-input" placeholder="Player name..." style="width:100%;margin-top:0.3rem">
+                        </div>
+                        <div style="flex:1;min-width:200px">
+                            <label style="font-size:0.72rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.04em" data-i18n="compare_player_b">球员 B</label>
+                            <input type="text" id="compare-input-b" class="filter-input" placeholder="Player name..." style="width:100%;margin-top:0.3rem">
+                        </div>
+                        <button id="compare-btn" class="cta-button" type="button" data-i18n="compare_button">对比</button>
+                    </div>
+                </article>
+
+                <div class="layout-2" id="compare-result-wrap" style="display:none">
+                    <article class="liquid-panel chart-panel">
+                        <div class="panel-head">
+                            <h3 data-i18n="compare_radar_title">雷达图对比</h3>
+                            <span id="compare-position-pill" class="status-pill status-medium"></span>
+                        </div>
+                        <div id="compare-radar-chart" style="width:100%;height:400px"></div>
+                    </article>
+
+                    <article class="liquid-panel compact-panel">
+                        <div class="panel-head">
+                            <h3 data-i18n="compare_stats_title">关键指标</h3>
+                        </div>
+                        <div class="table-scroll">
+                            <table class="data-table" id="compare-stats-table">
+                                <thead>
+                                    <tr>
+                                        <th data-i18n="compare_col_metric">指标</th>
+                                        <th id="compare-col-a">A</th>
+                                        <th id="compare-col-b">B</th>
+                                        <th>Δ</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="compare-stats-body"></tbody>
+                            </table>
+                        </div>
+                    </article>
+                </div>
+
+                <article class="liquid-panel compact-panel" id="compare-pct-panel" style="display:none;margin-top:var(--space)">
+                    <div class="panel-head">
+                        <h3 data-i18n="compare_pct_title">位置百分位对比</h3>
+                    </div>
+                    <div class="table-scroll">
+                        <table class="data-table" id="compare-pct-table">
+                            <thead>
+                                <tr>
+                                    <th data-i18n="compare_col_dimension">维度</th>
+                                    <th id="compare-pct-col-a">A</th>
+                                    <th id="compare-pct-col-b">B</th>
+                                    <th>Δ</th>
+                                </tr>
+                            </thead>
+                            <tbody id="compare-pct-body"></tbody>
+                        </table>
+                    </div>
+                </article>
             </section>
 
             <section class="view" id="view-value" aria-label="value">

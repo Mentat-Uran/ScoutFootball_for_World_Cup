@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import math
 from dataclasses import dataclass
-from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -771,13 +770,28 @@ def get_prediction_summary() -> dict[str, Any]:
     })
 
 
-@lru_cache(maxsize=1)
-def get_prediction_calibration() -> dict[str, Any]:
+_calibration_cache: dict[str, Any] = {"data": None, "timestamp": 0.0}
+_CALIBRATION_TTL_SECONDS = 300  # 5 minutes
+
+
+def get_prediction_calibration(force_refresh: bool = False) -> dict[str, Any]:
     """Return calibration metrics for match prediction models.
 
     Compares Poisson vs Dixon-Coles side by side.
     Includes low-score breakdown (0-0, 1-0, 0-1, 1-1) and league coverage.
+
+    Results are cached for 5 minutes to avoid repeated parquet reads.
+    Pass force_refresh=True to bypass the cache (e.g. after model retraining).
     """
+    import time
+
+    now = time.time()
+    if (
+        not force_refresh
+        and _calibration_cache["data"] is not None
+        and now - _calibration_cache["timestamp"] < _CALIBRATION_TTL_SECONDS
+    ):
+        return _calibration_cache["data"]
     settings = _settings()
     model_root = settings.data_root / "models"
     artifact_dir = model_root / "artifacts"
@@ -917,13 +931,16 @@ def get_prediction_calibration() -> dict[str, Any]:
         except Exception:
             poisson_metrics = {"status": "error"}
 
-    return _clean_json_value({
+    result = _clean_json_value({
         "dixon_coles": dc_metrics,
         "poisson": poisson_metrics,
         "low_score_breakdown": dc_low_score,
         "calibration_plot": dc_calibration_plot,
         "league_coverage": dc_league_coverage,
     })
+    _calibration_cache["data"] = result
+    _calibration_cache["timestamp"] = time.time()
+    return result
 
 
 def get_action_value_summary(
@@ -999,6 +1016,60 @@ def get_action_value_summary(
         })
 
     # Merge xT + VAEP
+    # Backfill VAEP player_name from xT data (bridge mapping via player_id)
+    if (
+        not vaep_df.empty
+        and not xt_df.empty
+        and "player_id" in vaep_df.columns
+        and "player_id" in xt_df.columns
+        and "player_name" in xt_df.columns
+    ):
+        # Build player_id → player_name mapping from xT data
+        id_name_map = (
+            xt_df[["player_id", "player_name"]]
+            .dropna(subset=["player_id"])
+            .drop_duplicates(subset=["player_id"])
+            .set_index("player_id")["player_name"]
+            .to_dict()
+        )
+        # Also try events_all.parquet for additional mappings
+        events_path = settings.data_root / "raw" / "statsbomb_open" / "events_all.parquet"
+        if events_path.exists():
+            try:
+                ev_df = _read_parquet(
+                    events_path, columns=["player_id", "player_name"]
+                )
+                if not ev_df.empty:
+                    ev_map = (
+                        ev_df.dropna(subset=["player_id"])
+                        .drop_duplicates(subset=["player_id"])
+                        .set_index("player_id")["player_name"]
+                        .to_dict()
+                    )
+                    # Merge: events map fills gaps not covered by xT
+                    for k, v in ev_map.items():
+                        if k not in id_name_map or not id_name_map.get(k):
+                            id_name_map[k] = v
+            except Exception:
+                pass
+
+        # Apply mapping to VAEP
+        if "player_name" not in vaep_df.columns:
+            vaep_df["player_name"] = ""
+        mask_empty = vaep_df["player_name"].isna() | (vaep_df["player_name"] == "")
+        vaep_df.loc[mask_empty, "player_name"] = (
+            vaep_df.loc[mask_empty, "player_id"]
+            .map(id_name_map)
+            .fillna("")
+        )
+
+        # Re-check if VAEP now has usable names
+        vaep_has_names = (
+            not vaep_df.empty
+            and "player_name" in vaep_df.columns
+            and vaep_df["player_name"].replace("", pd.NA).notna().any()
+        )
+
     # Check if VAEP has usable player_name (non-empty)
     vaep_has_names = (
         not vaep_df.empty
@@ -1981,6 +2052,133 @@ def get_player_profile(
     if fmt == "csv":
         return _player_list_to_csv([result])
     return result
+
+
+# ── Player comparison ────────────────────────────────────────────────────
+
+_RADAR_LABELS = ["Attack", "Possession", "Defense", "Reliability", "Impact"]
+
+
+def get_player_comparison(player_a: str, player_b: str) -> dict:
+    """Compare two players side-by-side with radar overlay and metric diffs.
+
+    Calls get_player_profile for both players, then builds a unified
+    comparison structure with per-dimension deltas.
+    """
+    profile_a = get_player_profile(player_a)
+    profile_b = get_player_profile(player_b)
+
+    if not profile_a.get("found"):
+        return {"error": f"Player '{player_a}' not found", "found_a": False}
+    if not profile_b.get("found"):
+        return {"error": f"Player '{player_b}' not found", "found_b": False}
+
+    # Build radar comparison
+    radar_a = profile_a.get("radar", [0, 0, 0, 0, 0])
+    radar_b = profile_b.get("radar", [0, 0, 0, 0, 0])
+    # Pad to 5 elements if needed
+    while len(radar_a) < 5:
+        radar_a.append(0)
+    while len(radar_b) < 5:
+        radar_b.append(0)
+
+    radar_comparison = []
+    for i, label in enumerate(_RADAR_LABELS):
+        val_a = float(radar_a[i]) if i < len(radar_a) else 0.0
+        val_b = float(radar_b[i]) if i < len(radar_b) else 0.0
+        radar_comparison.append({
+            "dimension": label,
+            "player_a": round(val_a, 1),
+            "player_b": round(val_b, 1),
+            "diff": round(val_a - val_b, 1),
+            "advantage": "a" if val_a > val_b else ("b" if val_b > val_a else "tie"),
+        })
+
+    # Position percentiles comparison
+    pp_a = profile_a.get("position_percentiles", {})
+    pp_b = profile_b.get("position_percentiles", {})
+
+    # Merge dimension keys from both
+    all_dims = list(dict.fromkeys(
+        list(pp_a.get("dimensions", [])) + list(pp_b.get("dimensions", []))
+    ))
+
+    pct_comparison = []
+    for dim in all_dims:
+        val_a = None
+        val_b = None
+        for d in pp_a.get("dimensions", []):
+            if d.get("name") == dim:
+                val_a = d.get("percentile")
+                break
+        for d in pp_b.get("dimensions", []):
+            if d.get("name") == dim:
+                val_b = d.get("percentile")
+                break
+        diff = None
+        advantage = "tie"
+        if val_a is not None and val_b is not None:
+            diff = round(float(val_a) - float(val_b), 1)
+            advantage = "a" if val_a > val_b else ("b" if val_b > val_a else "tie")
+        pct_comparison.append({
+            "dimension": dim,
+            "player_a": val_a,
+            "player_b": val_b,
+            "diff": diff,
+            "advantage": advantage,
+        })
+
+    # Key stats comparison
+    stats_fields = [
+        "optimized_score", "minutes", "matches", "npg_p90",
+        "assists_p90", "defense_composite", "possession_composite",
+    ]
+    stats_comparison = []
+    for field in stats_fields:
+        val_a = profile_a.get(field)
+        val_b = profile_b.get(field)
+        diff = None
+        if val_a is not None and val_b is not None:
+            try:
+                diff = round(float(val_a) - float(val_b), 2)
+            except (ValueError, TypeError):
+                pass
+        stats_comparison.append({
+            "metric": field,
+            "player_a": val_a,
+            "player_b": val_b,
+            "diff": diff,
+        })
+
+    return _clean_json_value({
+        "player_a": {
+            "name": profile_a.get("player", player_a),
+            "team": profile_a.get("team", ""),
+            "league": profile_a.get("league", ""),
+            "season": profile_a.get("season", ""),
+            "position_group": profile_a.get("position_group", ""),
+            "optimized_score": profile_a.get("optimized_score"),
+            "confidence_level": profile_a.get("confidence_level", "LOW"),
+        },
+        "player_b": {
+            "name": profile_b.get("player", player_b),
+            "team": profile_b.get("team", ""),
+            "league": profile_b.get("league", ""),
+            "season": profile_b.get("season", ""),
+            "position_group": profile_b.get("position_group", ""),
+            "optimized_score": profile_b.get("optimized_score"),
+            "confidence_level": profile_b.get("confidence_level", "LOW"),
+        },
+        "radar_labels": _RADAR_LABELS,
+        "radar_a": [r["player_a"] for r in radar_comparison],
+        "radar_b": [r["player_b"] for r in radar_comparison],
+        "radar_comparison": radar_comparison,
+        "position_percentile_comparison": pct_comparison,
+        "stats_comparison": stats_comparison,
+        "same_position": (
+            profile_a.get("position_group", "") == profile_b.get("position_group", "")
+        ),
+    })
 
 
 # ── World Cup endpoints ──────────────────────────────────────────────────

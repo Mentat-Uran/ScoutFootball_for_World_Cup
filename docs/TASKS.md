@@ -86,6 +86,9 @@ ScoutFootball 的长期形态是本地优先的足球数据研究平台，而不
 - [x] **修复 api_server.py Path 导入位置**（2026-07-10）：`Path` 原在文件底部局部导入但被上部代码使用，现移至文件顶部。
 - [x] **增加 MP4 导出上传大小限制**（2026-07-10）：`tactical-board/export/mp4` 原无上传大小限制，现限制 50MB。
 - [x] **修复 pipeline.py DC 校准死代码**（2026-07-10）：原 `if hg < ...: pass  # Could track log-loss here` 占位代码，现实现实际比分 log-loss 计算并写入校准报告。
+- [x] **球员对比工具**（2026-07-10）：新增 `GET /players/compare` API，支持双球员雷达叠加、位置百分位对比和关键指标差异表；新增前端"对比"视图含搜索输入、ECharts 雷达图和指标对比表。
+- [x] **修复 VAEP player_id → player_name 映射**（2026-07-10）：从 xT 数据和 events_all.parquet 构建 player_id → player_name 映射，回填 VAEP 数据中缺失的球员名称，使动作价值页能显示球员名而非原始 ID。
+- [x] **修复校准缓存失效问题**（2026-07-10）：`get_prediction_calibration()` 原用 `@lru_cache(maxsize=1)` 永久缓存，模型重新训练后返回过期数据；现改为 5 分钟 TTL 缓存，支持 `force_refresh` 参数。
 - [x] 五类核心数据源接入：FBref、Football-Data、Understat、StatsBomb Open Data、Club Elo。
 - [x] 本地缓存扩展到 10 赛季级别：Football-Data 原始 CSV 合计 68,953 行，Understat 为 31,902 个球员赛季行；当前活动 `combined_results.parquet` 为 5,330 行，需重建 10 赛季合并 Parquet。
 - [x] FBref 5 赛季标准、射门、misc 表均为 14,356 行。

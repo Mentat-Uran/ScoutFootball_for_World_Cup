@@ -498,6 +498,35 @@ The overall rating is minutes-weighted: `sum(score * minutes) / sum(minutes)`.
 Position groups are mapped from granular positions to GK, DEF, MID, ATT.
 Players with comma-joined team names (transferred players) are excluded.
 
+### GET /players/compare
+
+Side-by-side comparison of two players with radar overlay and metric diffs.
+
+**Query params**: `a` (player name), `b` (player name)
+
+**Response**:
+```json
+{
+  "player_a": { "name": "...", "team": "...", "position_group": "ST", "optimized_score": 72.0 },
+  "player_b": { "name": "...", "team": "...", "position_group": "CM", "optimized_score": 68.0 },
+  "radar_labels": ["Attack", "Possession", "Defense", "Reliability", "Impact"],
+  "radar_a": [85.0, 40.0, 20.0, 100.0, 75.0],
+  "radar_b": [30.0, 80.0, 70.0, 100.0, 60.0],
+  "radar_comparison": [
+    { "dimension": "Attack", "player_a": 85.0, "player_b": 30.0, "diff": 55.0, "advantage": "a" }
+  ],
+  "position_percentile_comparison": [...],
+  "stats_comparison": [
+    { "metric": "optimized_score", "player_a": 72.0, "player_b": 68.0, "diff": 4.0 }
+  ],
+  "same_position": false
+}
+```
+
+Radar values are position-pool percentiles (0-100). Position percentile comparison
+uses position-specific dimensions from `POSITION_DIMENSIONS`. Players in different
+position groups will have different dimension sets.
+
 ---
 
 ## 9.5 Static Snapshot Contracts

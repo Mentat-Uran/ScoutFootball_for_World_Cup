@@ -3,6 +3,7 @@ const i18n = {
     zh: {
         nav_overview: "总览",
         nav_players: "球员",
+        nav_compare: "对比",
         nav_value: "身价",
         nav_matches: "预测",
         nav_teams: "球队",
@@ -41,6 +42,18 @@ const i18n = {
         th_season: "赛季",
         value_kicker: "OOF residual",
         value_title: "实际身价 vs 预测身价",
+        compare_kicker: "球员对比",
+        compare_title: "双球员雷达叠加与指标差异",
+        compare_note: "选择两名球员进行位置百分位、雷达维度和关键统计的并排对比。",
+        compare_select: "选择球员",
+        compare_player_a: "球员 A",
+        compare_player_b: "球员 B",
+        compare_button: "对比",
+        compare_radar_title: "雷达图对比",
+        compare_stats_title: "关键指标",
+        compare_pct_title: "位置百分位对比",
+        compare_col_metric: "指标",
+        compare_col_dimension: "维度",
         value_rank: "偏离榜",
         undervalued: "低估",
         overvalued: "高估",
@@ -229,6 +242,7 @@ const i18n = {
     en: {
         nav_overview: "Overview",
         nav_players: "Players",
+        nav_compare: "Compare",
         nav_value: "Value",
         nav_matches: "Prediction",
         nav_teams: "Teams",
@@ -267,6 +281,18 @@ const i18n = {
         th_season: "Season",
         value_kicker: "OOF residual",
         value_title: "Actual value vs predicted value",
+        compare_kicker: "Player Comparison",
+        compare_title: "Dual radar overlay and metric diff",
+        compare_note: "Select two players for side-by-side position percentile, radar dimension and key stat comparison.",
+        compare_select: "Select Players",
+        compare_player_a: "Player A",
+        compare_player_b: "Player B",
+        compare_button: "Compare",
+        compare_radar_title: "Radar Comparison",
+        compare_stats_title: "Key Metrics",
+        compare_pct_title: "Position Percentile Comparison",
+        compare_col_metric: "Metric",
+        compare_col_dimension: "Dimension",
         value_rank: "Deviation board",
         undervalued: "Undervalued",
         overvalued: "Overvalued",
@@ -1480,6 +1506,155 @@ async function fetchValueReport() {
     } catch (err) {
         console.warn("Failed to fetch value report:", err);
         return [];
+    }
+}
+
+async function fetchPlayerComparison(a, b) {
+    try {
+        const data = await fetchJson(`/players/compare?a=${encodeURIComponent(a)}&b=${encodeURIComponent(b)}`);
+        return data;
+    } catch (err) {
+        console.warn("Failed to fetch comparison:", err);
+        return { error: "Failed to load comparison" };
+    }
+}
+
+async function renderCompare() {
+    const btn = document.getElementById("compare-btn");
+    const inputA = document.getElementById("compare-input-a");
+    const inputB = document.getElementById("compare-input-b");
+
+    if (btn && !btn.dataset.bound) {
+        btn.dataset.bound = "1";
+        btn.addEventListener("click", async () => {
+            const a = inputA.value.trim();
+            const b = inputB.value.trim();
+            if (!a || !b) return;
+            btn.disabled = true;
+            btn.textContent = "...";
+            try {
+                await _renderCompareResult(a, b);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = t("compare_button");
+            }
+        });
+        // Allow Enter key
+        const handler = (e) => { if (e.key === "Enter") btn.click(); };
+        if (inputA) inputA.addEventListener("keydown", handler);
+        if (inputB) inputB.addEventListener("keydown", handler);
+    }
+}
+
+async function _renderCompareResult(a, b) {
+    const data = await fetchPlayerComparison(a, b);
+    const wrap = document.getElementById("compare-result-wrap");
+    const pctPanel = document.getElementById("compare-pct-panel");
+
+    if (data.error) {
+        if (wrap) wrap.style.display = "none";
+        if (pctPanel) pctPanel.style.display = "none";
+        alert(data.error);
+        return;
+    }
+
+    if (wrap) wrap.style.display = "flex";
+
+    // Update column headers with player names
+    const colA = document.getElementById("compare-col-a");
+    const colB = document.getElementById("compare-col-b");
+    const pctColA = document.getElementById("compare-pct-col-a");
+    const pctColB = document.getElementById("compare-pct-col-b");
+    const nameA = data.player_a ? data.player_a.name : a;
+    const nameB = data.player_b ? data.player_b.name : b;
+    if (colA) colA.textContent = nameA;
+    if (colB) colB.textContent = nameB;
+    if (pctColA) pctColA.textContent = nameA;
+    if (pctColB) pctColB.textContent = nameB;
+
+    // Position pill
+    const posPill = document.getElementById("compare-position-pill");
+    if (posPill) {
+        const posA = data.player_a ? data.player_a.position_group : "";
+        const posB = data.player_b ? data.player_b.position_group : "";
+        posPill.textContent = posA === posB ? posA : `${posA} vs ${posB}`;
+    }
+
+    // Render stats table
+    const statsBody = document.getElementById("compare-stats-body");
+    if (statsBody) {
+        statsBody.innerHTML = (data.stats_comparison || []).map(s => {
+            const valA = s.player_a !== null && s.player_a !== undefined ? s.player_a : "—";
+            const valB = s.player_b !== null && s.player_b !== undefined ? s.player_b : "—";
+            const diff = s.diff !== null && s.diff !== undefined ? (s.diff > 0 ? `+${s.diff}` : s.diff) : "—";
+            const cls = s.diff > 0 ? "status-high" : s.diff < 0 ? "status-low" : "";
+            return `<tr>
+                <td>${escapeHtml(s.metric)}</td>
+                <td>${escapeHtml(String(valA))}</td>
+                <td>${escapeHtml(String(valB))}</td>
+                <td><span class="status-pill ${cls}">${diff}</span></td>
+            </tr>`;
+        }).join("");
+    }
+
+    // Render percentile table
+    const pctBody = document.getElementById("compare-pct-body");
+    if (pctBody) {
+        const pcts = data.position_percentile_comparison || [];
+        if (pcts.length > 0) {
+            if (pctPanel) pctPanel.style.display = "block";
+            // Fix column headers
+            if (pctColA) pctColA.textContent = nameA;
+            if (pctColB) pctColB.textContent = nameB;
+            pctBody.innerHTML = pcts.map(p => {
+                const valA = p.player_a !== null && p.player_a !== undefined ? p.player_a : "—";
+                const valB = p.player_b !== null && p.player_b !== undefined ? p.player_b : "—";
+                const diff = p.diff !== null && p.diff !== undefined ? (p.diff > 0 ? `+${p.diff}` : p.diff) : "—";
+                const cls = p.diff > 0 ? "status-high" : p.diff < 0 ? "status-low" : "";
+                return `<tr>
+                    <td>${escapeHtml(p.dimension)}</td>
+                    <td>${escapeHtml(String(valA))}</td>
+                    <td>${escapeHtml(String(valB))}</td>
+                    <td><span class="status-pill ${cls}">${diff}</span></td>
+                </tr>`;
+            }).join("");
+        } else {
+            if (pctPanel) pctPanel.style.display = "none";
+        }
+    }
+
+    // Render radar chart
+    const chartEl = document.getElementById("compare-radar-chart");
+    if (chartEl && typeof echarts !== "undefined") {
+        if (appState.charts.compare) appState.charts.compare.dispose();
+        const chart = echarts.init(chartEl);
+        appState.charts.compare = chart;
+
+        chart.setOption({
+            tooltip: { trigger: "item" },
+            legend: { data: [nameA, nameB], bottom: 0 },
+            radar: {
+                indicator: (data.radar_labels || []).map(l => ({ name: l, max: 100 })),
+                shape: "polygon",
+            },
+            series: [{
+                type: "radar",
+                data: [
+                    {
+                        value: data.radar_a || [],
+                        name: nameA,
+                        areaStyle: { opacity: 0.2 },
+                        lineStyle: { width: 2 },
+                    },
+                    {
+                        value: data.radar_b || [],
+                        name: nameB,
+                        areaStyle: { opacity: 0.2 },
+                        lineStyle: { width: 2 },
+                    },
+                ],
+            }],
+        });
     }
 }
 
@@ -3451,7 +3626,8 @@ function renderData() {
 
 async function renderActiveView() {
     if (appState.view === "overview") renderOverview();
-    if (appState.view === "players") renderPlayers();
+    if (appState.view === "players") await renderPlayers();
+    if (appState.view === "compare") await renderCompare();
     if (appState.view === "value") renderValue();
     if (appState.view === "matches") await renderMatches();
     if (appState.view === "teams") await renderTeams();

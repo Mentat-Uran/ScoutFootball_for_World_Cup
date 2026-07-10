@@ -20,6 +20,7 @@ from scoutfootball.api import (
     get_match_prediction_dc,
     get_model_run_detail,
     get_model_runs,
+    get_player_comparison,
     get_player_profile,
     get_player_ratings,
     get_prediction_calibration,
@@ -192,6 +193,10 @@ def create_app() -> FastAPI:
     @app.get("/ratings/meta")
     def ratings_meta():
         return get_ratings_meta()
+
+    @app.get("/players/compare")
+    def players_compare(a: str, b: str):
+        return get_player_comparison(a, b)
 
     @app.get("/player/{player_name}/profile")
     def player_profile(player_name: str, season: str | None = None):

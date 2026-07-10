@@ -72,3 +72,18 @@ def test_teams_strength_with_limit(client: TestClient):
     assert response.status_code == 200
     data = response.json()
     assert data["count"] <= 5
+
+
+def test_players_compare_endpoint(client: TestClient):
+    """/players/compare should return comparison data."""
+    response = client.get("/players/compare?a=Lionel Messi&b=Cristiano Ronaldo")
+    assert response.status_code == 200
+    data = response.json()
+    # Should have either comparison data or error
+    if "error" not in data:
+        assert "player_a" in data
+        assert "player_b" in data
+        assert "radar_labels" in data
+        assert "radar_a" in data
+        assert "radar_b" in data
+        assert "stats_comparison" in data
