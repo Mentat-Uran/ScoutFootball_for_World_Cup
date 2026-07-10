@@ -783,7 +783,7 @@ bypassed and repopulated on the next call.
 {
   "status": "ok",
   "data_source": "local",
-  "version": "1.0.2"
+  "version": "1.0.3"
 }
 ```
 
@@ -903,7 +903,7 @@ The workspace is an explicit backup and transfer format for browser-local scouti
     "revision": 3,
     "device_scope": "browser-local",
     "last_action": "local-edit|manual-export|import-merge|import-replace",
-    "app_version": "1.0.2",
+    "app_version": "1.0.3",
     "imported_from": "optional-workspace-id"
   },
   "source": {

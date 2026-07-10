@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "scoutfootball"
-version = "1.0.2"
+version = "1.0.3"
 description = "ScoutFootball for World Cup — local-first football analytics platform for the 2026 FIFA World Cup."
 readme = "README.md"
 requires-python = ">=3.11"

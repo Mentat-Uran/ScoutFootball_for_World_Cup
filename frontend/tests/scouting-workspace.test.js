@@ -15,7 +15,7 @@ function workspace(overrides = {}) {
         exported_at: "2026-07-01T00:00:00.000Z",
         revision: 2,
         last_action: "local-edit",
-        app_version: "1.0.2",
+        app_version: "1.0.3",
         review_statuses: { player_1: "reviewing" },
         shortlist_notes: { player_1: "Track the next three matches" },
         watchlist: [{ key: "player_1", name: "Player One", rating: 81 }],

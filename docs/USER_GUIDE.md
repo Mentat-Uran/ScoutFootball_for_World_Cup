@@ -242,4 +242,4 @@ brew install ffmpeg
 
 ---
 
-*ScoutFootball v1.0.2 — 为 2026 美加墨世界杯打造*
+*ScoutFootball v1.0.3 — 为 2026 美加墨世界杯打造*

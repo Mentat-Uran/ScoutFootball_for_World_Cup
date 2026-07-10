@@ -81,6 +81,10 @@ ScoutFootball 的长期形态是本地优先的足球数据研究平台，而不
 
 ## 已完成
 
+- [x] **球探工作区服务端持久化**（2026-07-11，v1.0.3）：新增 `ScoutingWorkspaceStore` 服务端持久化层，支持 `PUT/GET /scouting-workspaces/{id}`、`/scouting-workspaces/latest`、`/scouting-workspaces/capabilities` 端点。使用 If-Match 乐观并发控制（revision 版本号）、原子写入、不可变备份和 loopback 访问控制。
+- [x] **H2H 近期状态趋势增强**（2026-07-11，v1.0.3）：新增 `compute_form_trend()` 函数，计算 momentum（近期 vs 较早期 PPG 差值）、form_rating（0-100 综合评分）、trend_label（improving/declining/stable）、进球/失球趋势、clean_sheets、failed_to_score 和累积积分 sparkline 数据。前端新增 form trend 卡片含评分条、趋势徽章和 SVG sparkline。空数据和异常路径均有零状态降级。
+- [x] **球员球探报告导出**（2026-07-11，v1.0.3）：将单行球员 CSV 导出替换为多段球探报告，支持 CSV 和 JSON 两种格式，覆盖 profile、radar、position_percentiles、xT_summary、3-season trend、low_confidence_reasons、scouting_notes、season_history 八个 section。修复 `position_percentiles` 字段名 bug（API 返回复数 dict，前端读单数 undefined）和 radar label bug（Volume/Overall → Reliability/Impact）。
+- [x] **球员对比 CSV 导出**（2026-07-11，v1.0.3）：对比结果面板新增导出 CSV 按钮，下载多段 CSV 覆盖球员 profiles、radar 维度、stats 对比和位置百分位对比。
 - [x] **比赛交锋记录视图**（2026-07-11）：新增 `GET /predictions/{home}/{away}/h2h` API 端点，从 `combined_results.parquet` 计算 H2H 交锋史、两队近期 form 和汇总统计。前端比赛预测页新增"交锋记录"section 含比例条、交锋表、战绩对比；没有直接交锋时仍展示近期状态，移动端单列降级。静态导出 `h2h_pairs.json`（40 对）。比赛表与规范化结果使用 TTL 缓存，单次查询从约 3.3 秒降至约 0.06 秒；API 限制查询条数，别名查询通过 `queried_home_result` 保证胜负视角正确。同步修复 `load_player_rolling`/`load_team_rolling` 永久 lru_cache 过期问题（迁移到 TTL 缓存），删除未使用的 `/prediction/{home}/{away}` 单数别名端点。
 - [x] **搜索建议端点**（2026-07-10）：新增 `GET /search?q=&type=&limit=` 端点，前缀优先+子串回退匹配球员和球队，支持 type 过滤和 limit 上限 25。前端新增 SearchTypeahead 组件，接入球员搜索、球员对比、球队对比共 5 个输入框，支持键盘导航和防抖。
 - [x] **TTL 缓存迁移**（2026-07-10）：将 `_load_all_player_ratings`、`load_model_meta`、`load_league_metrics`、`load_player_value_metrics` 和 `_wc_cache` 从永久 lru_cache 迁移到 TTL 缓存（默认 300 秒，可通过 `SCOUTFOOTBALL_CACHE_TTL_SECONDS` 环境变量配置），支持 `force_refresh` 参数，修复模型重训后 API 返回过期数据的问题。

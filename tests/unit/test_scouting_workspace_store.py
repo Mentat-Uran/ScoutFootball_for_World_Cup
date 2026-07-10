@@ -34,7 +34,7 @@ def _workspace(
             "revision": revision,
             "device_scope": "browser-local",
             "last_action": "manual-export",
-            "app_version": "1.0.2",
+            "app_version": "1.0.3",
             "imported_from": "",
         },
         "source": {

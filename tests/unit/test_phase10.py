@@ -192,7 +192,7 @@ class TestAPI:
 
         resp = health_check()
         assert resp.status == "ok"
-        assert resp.version == "1.0.2"
+        assert resp.version == "1.0.3"
 
     def test_list_players(self):
         from scoutfootball.api import list_players

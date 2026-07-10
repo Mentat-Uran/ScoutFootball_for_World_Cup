@@ -2,7 +2,14 @@
 
 All notable changes to ScoutFootball will be documented in this file.
 
-## [Unreleased]
+## [1.0.3] - 2026-07-11
+
+### New Features
+
+- **Server-side scouting workspace persistence:** scouting workspaces can now be saved to and loaded from the local API with conflict-safe optimistic concurrency (If-Match revisions), atomic writes, immutable backups, and loopback-only access control.
+- **H2H form trend momentum and rating:** the head-to-head view now shows a form-trend card for each team with a 0-100 form rating, momentum indicator (improving/declining/stable), goals scored/conceded per game trends, clean sheets, failed-to-score count, and a cumulative points sparkline.
+- **Multi-section player scouting report export:** the single-row player CSV export is replaced with a full scouting report available in both CSV and JSON formats, covering profile, radar, position percentiles, xT summary, 3-season trend, low-confidence reasons, scouting notes, and season history.
+- **Player comparison CSV export:** the comparison result panel now has an export button that downloads a multi-section CSV covering player profiles, radar dimensions, stats comparison, and position percentile comparison.
 
 ### Frontend
 
@@ -19,13 +26,21 @@ All notable changes to ScoutFootball will be documented in this file.
 
 ### Fixed
 
+- Fixed player profile field name mismatch: the API returns `position_percentiles` (plural dict) but the frontend read `position_percentile` (singular, always undefined).
+- Fixed radar label mismatch: the frontend used `Volume`/`Overall` but the API defines `Reliability`/`Impact`.
 - Static export no longer writes Python repr strings for dataclass/Pydantic responses (`health.json`, `players_list.json` were affected). The export script now requires JSON-safe serialization and fails loudly on non-serializable objects instead of falling back to `str()`.
 
 ### Testing
 
+- Added `compute_form_trend` unit tests covering empty data, all-win high rating, declining negative momentum, cumulative points trend, rating boundaries, and real H2H response integration.
+- Added frontend contract tests for scouting report export buttons, position percentiles field name fix, form trend rendering, and player comparison export.
 - Added API JSON cleaning regression tests covering `_clean_json_value` for numpy types, inf, and NaN.
 - Added static frontend JSON contract tests validating that `frontend/data/` files are valid JSON dicts/lists without repr strings.
 - Added empty data handling tests for API and frontend degradation.
+
+### Changed
+
+- Bump version to 1.0.3 across all modules (pyproject.toml, __init__.py, package.json, frontend, preload, tests, health.json, uv.lock).
 
 ## [1.0.2] - 2026-06-13
 

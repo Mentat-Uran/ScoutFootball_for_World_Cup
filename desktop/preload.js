@@ -3,7 +3,7 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("scoutDesktop", {
-  version: process.env.npm_package_version || "1.0.2",
+  version: process.env.npm_package_version || "1.0.3",
   platform: process.platform,
   isDesktop: true,
 
