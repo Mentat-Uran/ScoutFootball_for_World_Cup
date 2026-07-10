@@ -87,3 +87,15 @@ def test_players_compare_endpoint(client: TestClient):
         assert "radar_a" in data
         assert "radar_b" in data
         assert "stats_comparison" in data
+
+
+def test_teams_compare_endpoint(client: TestClient):
+    """/teams/compare should return team comparison data."""
+    response = client.get("/teams/compare?a=Arsenal&b=Barcelona")
+    assert response.status_code == 200
+    data = response.json()
+    if "error" not in data:
+        assert "team_a" in data
+        assert "team_b" in data
+        assert "position_group_comparison" in data
+        assert "radar_labels" in data

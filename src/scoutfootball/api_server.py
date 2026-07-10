@@ -28,6 +28,7 @@ from scoutfootball.api import (
     get_ratings_meta,
     get_review_queue,
     get_shortlist,
+    get_team_comparison,
     get_team_strength,
     get_value_summary,
     get_watchlist,
@@ -137,6 +138,10 @@ def create_app() -> FastAPI:
         limit: int = 100,
     ):
         return get_team_strength(league=league, season=season, limit=limit)
+
+    @app.get("/teams/compare")
+    def teams_compare(a: str, b: str):
+        return get_team_comparison(a, b)
 
     @app.get("/prediction/{home_team}/{away_team}")
     def prediction(home_team: str, away_team: str, model: str = "poisson"):

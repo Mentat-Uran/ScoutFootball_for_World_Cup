@@ -81,6 +81,13 @@ const i18n = {
         teams_detail_title: "球队详情",
         teams_detail_placeholder: "选择一支球队查看详情",
         teams_chart_title: "位置组实力对比",
+        teams_compare_title: "球队对比",
+        teams_compare_a: "球队 A",
+        teams_compare_b: "球队 B",
+        teams_compare_button: "对比",
+        teams_compare_radar: "位置组雷达",
+        teams_compare_pos: "位置组对比",
+        teams_compare_col_group: "组",
         scouting_metric_review: "待复核",
         scouting_metric_short: "候选",
         scouting_search: "搜索球员、球队或原因",
@@ -320,6 +327,13 @@ const i18n = {
         teams_detail_title: "Team Detail",
         teams_detail_placeholder: "Select a team to view details",
         teams_chart_title: "Position Group Strength Comparison",
+        teams_compare_title: "Team Comparison",
+        teams_compare_a: "Team A",
+        teams_compare_b: "Team B",
+        teams_compare_button: "Compare",
+        teams_compare_radar: "Position Group Radar",
+        teams_compare_pos: "Position Group Comparison",
+        teams_compare_col_group: "Group",
         scouting_metric_review: "To review",
         scouting_metric_short: "Shortlist",
         scouting_search: "Search player, team, or reason",
@@ -513,6 +527,7 @@ function _staticUrlFor(apiPath) {
         "/artifacts": "/data/artifacts.json",
         "/teams": "/data/teams.json",
         "/teams/strength": "/data/team_strength.json",
+        "/teams/compare": null,
         "/ratings": "/data/ratings.json",
         "/ratings/meta": "/data/ratings_meta.json",
         "/ratings/snapshots": "/data/ratings.json",
@@ -2932,6 +2947,7 @@ async function renderTeams() {
 
     // Render chart
     renderTeamsChart(filtered);
+    initTeamCompareControls();
 }
 
 function renderTeamDetail(team) {
@@ -3006,6 +3022,123 @@ function renderTeamsChart(teams) {
         yAxis: { type: "value", name: "Rating" },
         series: series,
     });
+}
+
+async function fetchTeamComparison(a, b) {
+    try {
+        const data = await fetchJson(`/teams/compare?a=${encodeURIComponent(a)}&b=${encodeURIComponent(b)}`);
+        return data;
+    } catch (err) {
+        console.warn("Failed to fetch team comparison:", err);
+        return { error: "Failed to load comparison" };
+    }
+}
+
+function initTeamCompareControls() {
+    const btn = document.getElementById("team-compare-btn");
+    const inputA = document.getElementById("team-compare-input-a");
+    const inputB = document.getElementById("team-compare-input-b");
+    if (!btn || btn.dataset.bound) return;
+    btn.dataset.bound = "1";
+
+    const doCompare = async () => {
+        const a = inputA.value.trim();
+        const b = inputB.value.trim();
+        if (!a || !b) return;
+        btn.disabled = true;
+        btn.textContent = "...";
+        try {
+            await _renderTeamCompareResult(a, b);
+        } finally {
+            btn.disabled = false;
+            btn.textContent = t("teams_compare_button");
+        }
+    };
+
+    btn.addEventListener("click", doCompare);
+    const handler = (e) => { if (e.key === "Enter") doCompare(); };
+    if (inputA) inputA.addEventListener("keydown", handler);
+    if (inputB) inputB.addEventListener("keydown", handler);
+}
+
+async function _renderTeamCompareResult(a, b) {
+    const data = await fetchTeamComparison(a, b);
+    const wrap = document.getElementById("team-compare-result");
+
+    if (data.error) {
+        if (wrap) wrap.style.display = "none";
+        alert(data.error);
+        return;
+    }
+
+    if (wrap) wrap.style.display = "block";
+
+    const nameA = data.team_a ? data.team_a.name : a;
+    const nameB = data.team_b ? data.team_b.name : b;
+
+    // Column headers
+    const colA = document.getElementById("team-compare-col-a");
+    const colB = document.getElementById("team-compare-col-b");
+    if (colA) colA.textContent = nameA;
+    if (colB) colB.textContent = nameB;
+
+    // Pill
+    const pill = document.getElementById("team-compare-pill");
+    if (pill) {
+        const diff = data.overall_diff || 0;
+        pill.textContent = diff > 0 ? `${nameA} +${diff.toFixed(1)}` : diff < 0 ? `${nameB} +${(-diff).toFixed(1)}` : "Tie";
+    }
+
+    // Position group table
+    const body = document.getElementById("team-compare-pos-body");
+    if (body) {
+        body.innerHTML = (data.position_group_comparison || []).map(p => {
+            const valA = p.rating_a !== null && p.rating_a !== undefined ? p.rating_a.toFixed(1) : "—";
+            const valB = p.rating_b !== null && p.rating_b !== undefined ? p.rating_b.toFixed(1) : "—";
+            const diff = p.diff !== null && p.diff !== undefined ? (p.diff > 0 ? `+${p.diff.toFixed(1)}` : p.diff.toFixed(1)) : "—";
+            const cls = p.diff > 0 ? "status-high" : p.diff < 0 ? "status-low" : "";
+            return `<tr>
+                <td>${escapeHtml(p.group)}</td>
+                <td>${valA}</td>
+                <td>${valB}</td>
+                <td><span class="status-pill ${cls}">${diff}</span></td>
+            </tr>`;
+        }).join("");
+    }
+
+    // Radar chart
+    const chartEl = document.getElementById("team-compare-radar-chart");
+    if (chartEl && typeof echarts !== "undefined") {
+        if (appState.charts.teamCompare) appState.charts.teamCompare.dispose();
+        const chart = echarts.init(chartEl);
+        appState.charts.teamCompare = chart;
+
+        chart.setOption({
+            tooltip: { trigger: "item" },
+            legend: { data: [nameA, nameB], bottom: 0 },
+            radar: {
+                indicator: (data.radar_labels || []).map(l => ({ name: l, max: 100 })),
+                shape: "polygon",
+            },
+            series: [{
+                type: "radar",
+                data: [
+                    {
+                        value: data.radar_a || [],
+                        name: nameA,
+                        areaStyle: { opacity: 0.2 },
+                        lineStyle: { width: 2 },
+                    },
+                    {
+                        value: data.radar_b || [],
+                        name: nameB,
+                        areaStyle: { opacity: 0.2 },
+                        lineStyle: { width: 2 },
+                    },
+                ],
+            }],
+        });
+    }
 }
 
 function renderReports() {

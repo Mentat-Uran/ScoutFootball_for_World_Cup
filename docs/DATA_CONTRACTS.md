@@ -498,6 +498,33 @@ The overall rating is minutes-weighted: `sum(score * minutes) / sum(minutes)`.
 Position groups are mapped from granular positions to GK, DEF, MID, ATT.
 Players with comma-joined team names (transferred players) are excluded.
 
+### GET /teams/compare
+
+Side-by-side comparison of two teams with position group radar and diff table.
+
+**Query params**: `a` (team name), `b` (team name)
+
+**Response**:
+```json
+{
+  "team_a": { "name": "Arsenal", "league": "...", "overall_rating": 65.5, "squad_size": 22 },
+  "team_b": { "name": "Barcelona", "league": "...", "overall_rating": 68.0, "squad_size": 25 },
+  "overall_diff": -2.5,
+  "overall_advantage": "b",
+  "position_group_comparison": [
+    { "group": "GK", "rating_a": 55.0, "rating_b": 60.0, "diff": -5.0, "advantage": "b", "players_a": 2, "players_b": 3 }
+  ],
+  "top_players_comparison": [
+    { "player_a": { "name": "...", "rating": 72.0 }, "player_b": { "name": "...", "rating": 75.0 } }
+  ],
+  "radar_labels": ["GK", "DEF", "MID", "ATT", "Overall"],
+  "radar_a": [55.0, 60.0, 65.0, 70.0, 65.5],
+  "radar_b": [60.0, 62.0, 68.0, 72.0, 68.0]
+}
+```
+
+Team matching is case-insensitive and supports partial name matches.
+
 ### GET /players/compare
 
 Side-by-side comparison of two players with radar overlay and metric diffs.

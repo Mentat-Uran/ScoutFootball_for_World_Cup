@@ -499,6 +499,54 @@
                     </div>
                     <div id="teams-chart" style="width:100%;height:400px"></div>
                 </article>
+
+                <article class="liquid-panel compact-panel" style="margin-top:var(--space)">
+                    <div class="panel-head">
+                        <h3 data-i18n="teams_compare_title">球队对比</h3>
+                    </div>
+                    <div style="display:flex;gap:var(--space);align-items:flex-end;flex-wrap:wrap;padding:var(--space)">
+                        <div style="flex:1;min-width:180px">
+                            <label style="font-size:0.72rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.04em" data-i18n="teams_compare_a">球队 A</label>
+                            <input type="text" id="team-compare-input-a" class="filter-input" placeholder="Team name..." style="width:100%;margin-top:0.3rem">
+                        </div>
+                        <div style="flex:1;min-width:180px">
+                            <label style="font-size:0.72rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.04em" data-i18n="teams_compare_b">球队 B</label>
+                            <input type="text" id="team-compare-input-b" class="filter-input" placeholder="Team name..." style="width:100%;margin-top:0.3rem">
+                        </div>
+                        <button id="team-compare-btn" class="cta-button" type="button" data-i18n="teams_compare_button">对比</button>
+                    </div>
+                </article>
+
+                <div id="team-compare-result" style="display:none;margin-top:var(--space)">
+                    <div class="layout-2">
+                        <article class="liquid-panel chart-panel">
+                            <div class="panel-head">
+                                <h3 data-i18n="teams_compare_radar">位置组雷达</h3>
+                                <span id="team-compare-pill" class="status-pill status-medium"></span>
+                            </div>
+                            <div id="team-compare-radar-chart" style="width:100%;height:400px"></div>
+                        </article>
+
+                        <article class="liquid-panel compact-panel">
+                            <div class="panel-head">
+                                <h3 data-i18n="teams_compare_pos">位置组对比</h3>
+                            </div>
+                            <div class="table-scroll">
+                                <table class="data-table" id="team-compare-pos-table">
+                                    <thead>
+                                        <tr>
+                                            <th data-i18n="teams_compare_col_group">组</th>
+                                            <th id="team-compare-col-a">A</th>
+                                            <th id="team-compare-col-b">B</th>
+                                            <th>Δ</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="team-compare-pos-body"></tbody>
+                                </table>
+                            </div>
+                        </article>
+                    </div>
+                </div>
             </section>
 
             <section class="view" id="view-scouting" aria-label="scouting">

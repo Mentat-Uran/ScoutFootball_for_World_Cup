@@ -712,6 +712,114 @@ def get_team_strength(
     return _clean_json_value({"count": len(teams), "teams": teams})
 
 
+def get_team_comparison(team_a: str, team_b: str) -> dict:
+    """Compare two teams side-by-side using team strength data.
+
+    Returns position group diffs, top player comparison and squad metrics.
+    """
+    # Normalize team names for matching
+    strength = get_team_strength(limit=500)
+    all_teams = strength.get("teams", [])
+
+    # Find teams by name (case-insensitive partial match)
+    def _find(name):
+        name_lower = name.lower().strip()
+        for t in all_teams:
+            if t["team"].lower() == name_lower:
+                return t
+        for t in all_teams:
+            if name_lower in t["team"].lower():
+                return t
+        return None
+
+    a = _find(team_a)
+    b = _find(team_b)
+
+    if not a:
+        return {"error": f"Team '{team_a}' not found"}
+    if not b:
+        return {"error": f"Team '{team_b}' not found"}
+
+    # Position group comparison
+    pos_groups = ["GK", "DEF", "MID", "ATT"]
+    pos_comparison = []
+    for pg in pos_groups:
+        pg_a = (a.get("position_groups") or {}).get(pg)
+        pg_b = (b.get("position_groups") or {}).get(pg)
+        rating_a = pg_a["rating"] if pg_a else None
+        rating_b = pg_b["rating"] if pg_b else None
+        diff = None
+        advantage = "tie"
+        if rating_a is not None and rating_b is not None:
+            diff = round(rating_a - rating_b, 2)
+            advantage = "a" if rating_a > rating_b else ("b" if rating_b > rating_a else "tie")
+        pos_comparison.append({
+            "group": pg,
+            "rating_a": rating_a,
+            "rating_b": rating_b,
+            "diff": diff,
+            "advantage": advantage,
+            "players_a": pg_a["player_count"] if pg_a else 0,
+            "players_b": pg_b["player_count"] if pg_b else 0,
+        })
+
+    # Top players side-by-side (top 5 each)
+    top_a = a.get("top_players", [])
+    top_b = b.get("top_players", [])
+    max_top = max(len(top_a), len(top_b))
+    top_comparison = []
+    for i in range(max_top):
+        pa = top_a[i] if i < len(top_a) else None
+        pb = top_b[i] if i < len(top_b) else None
+        top_comparison.append({
+            "player_a": pa,
+            "player_b": pb,
+        })
+
+    # Overall metrics comparison
+    overall_a = a.get("overall_rating", 0)
+    overall_b = b.get("overall_rating", 0)
+    overall_diff = round(overall_a - overall_b, 2)
+
+    return _clean_json_value({
+        "team_a": {
+            "name": a["team"],
+            "league": a.get("league", ""),
+            "overall_rating": overall_a,
+            "squad_size": a.get("squad_size", 0),
+            "total_minutes": a.get("total_minutes", 0),
+            "confidence_distribution": a.get("confidence_distribution", {}),
+        },
+        "team_b": {
+            "name": b["team"],
+            "league": b.get("league", ""),
+            "overall_rating": overall_b,
+            "squad_size": b.get("squad_size", 0),
+            "total_minutes": b.get("total_minutes", 0),
+            "confidence_distribution": b.get("confidence_distribution", {}),
+        },
+        "overall_diff": overall_diff,
+        "overall_advantage": "a" if overall_diff > 0 else ("b" if overall_diff < 0 else "tie"),
+        "position_group_comparison": pos_comparison,
+        "top_players_comparison": top_comparison,
+        "radar_labels": ["GK", "DEF", "MID", "ATT", "Overall"],
+        "radar_a": [
+            (a.get("position_groups") or {}).get("GK", {}).get("rating", 0),
+            (a.get("position_groups") or {}).get("DEF", {}).get("rating", 0),
+            (a.get("position_groups") or {}).get("MID", {}).get("rating", 0),
+            (a.get("position_groups") or {}).get("ATT", {}).get("rating", 0),
+            overall_a,
+        ],
+        "radar_b": [
+            (b.get("position_groups") or {}).get("GK", {}).get("rating", 0),
+            (b.get("position_groups") or {}).get("DEF", {}).get("rating", 0),
+            (b.get("position_groups") or {}).get("MID", {}).get("rating", 0),
+            (b.get("position_groups") or {}).get("ATT", {}).get("rating", 0),
+            overall_b,
+        ],
+    })
+
+
 def get_prediction_summary() -> dict[str, Any]:
     """Return baseline prediction artifact metadata."""
     artifact_path = (
