@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+import pandas as pd
 
 from scoutfootball.app.data_loader import (
     data_source_label,
@@ -568,6 +569,150 @@ def get_ratings_meta() -> dict:
     return _clean_json_value({"model_meta": meta, "league_metrics": leagues})
 
 
+# ── Position group mapping for team strength aggregation ──────────
+_POS_GROUP_MAP: dict[str, str] = {
+    "GK": "GK",
+    "CB": "DEF", "FB": "DEF", "LB": "DEF", "RB": "DEF", "RWB": "DEF", "LWB": "DEF",
+    "DM": "MID", "CM": "MID", "AM": "MID", "CDM": "MID", "CAM": "MID", "LM": "MID", "RM": "MID",
+    "W": "ATT", "ST": "ATT", "CF": "ATT", "RW": "ATT", "LW": "ATT", "WF": "ATT",
+}
+
+
+def _broad_position(pos: str | None) -> str:
+    """Map a granular position to GK/DEF/MID/ATT."""
+    if not pos:
+        return "UNK"
+    key = str(pos).strip().upper()
+    return _POS_GROUP_MAP.get(key, "UNK")
+
+
+def get_team_strength(
+    league: str | None = None,
+    season: str | None = None,
+    limit: int = 100,
+) -> dict:
+    """Aggregate player ratings to team-level strength metrics.
+
+    Returns overall team rating, position-group breakdowns, top players,
+    squad depth and average confidence for each team.
+    """
+    df = load_player_ratings(league=league, season=season)
+    if df.empty:
+        return {"count": 0, "teams": []}
+
+    # Resolve column aliases
+    team_col = "team" if "team" in df.columns else (
+        "team_name" if "team_name" in df.columns else None
+    )
+    score_col = "optimized_score" if "optimized_score" in df.columns else (
+        "rating" if "rating" in df.columns else None
+    )
+    pos_col = "position_group" if "position_group" in df.columns else (
+        "sub_position" if "sub_position" in df.columns else None
+    )
+    minutes_col = "minutes" if "minutes" in df.columns else None
+    name_col = "player_name" if "player_name" in df.columns else (
+        "player" if "player" in df.columns else None
+    )
+    league_col = "league" if "league" in df.columns else None
+    season_col = "season" if "season" in df.columns else None
+    conf_col = "confidence_level" if "confidence_level" in df.columns else None
+
+    if team_col is None or score_col is None:
+        return {"count": 0, "teams": []}
+
+    # Filter out rows with no team or score
+    df = df[df[team_col].notna() & df[score_col].notna()].copy()
+    # Exclude comma-joined club histories (transferred players)
+    df = df[~df[team_col].astype(str).str.contains(",", na=False)]
+    # Normalize team name
+    df[team_col] = df[team_col].astype(str).str.strip()
+    df = df[df[team_col] != ""]
+
+    if df.empty:
+        return {"count": 0, "teams": []}
+
+    # Add broad position group
+    if pos_col:
+        df["broad_pos"] = df[pos_col].map(_broad_position)
+    else:
+        df["broad_pos"] = "UNK"
+
+    # Ensure numeric score
+    df[score_col] = pd.to_numeric(df[score_col], errors="coerce").fillna(0.0)
+    if minutes_col:
+        df[minutes_col] = pd.to_numeric(df[minutes_col], errors="coerce").fillna(0.0)
+    else:
+        df["minutes"] = 0.0
+        minutes_col = "minutes"
+
+    teams: list[dict[str, Any]] = []
+
+    for team_name, group in df.groupby(team_col):
+        # Minutes-weighted overall rating
+        total_minutes = group[minutes_col].sum()
+        if total_minutes > 0:
+            overall = float((group[score_col] * group[minutes_col]).sum() / total_minutes)
+        else:
+            overall = float(group[score_col].mean())
+
+        # Position group breakdown
+        pos_breakdown: dict[str, dict[str, Any]] = {}
+        for bpos, pg in group.groupby("broad_pos"):
+            pg_minutes = pg[minutes_col].sum()
+            if pg_minutes > 0:
+                pg_rating = float((pg[score_col] * pg[minutes_col]).sum() / pg_minutes)
+            else:
+                pg_rating = float(pg[score_col].mean())
+            pos_breakdown[bpos] = {
+                "rating": round(pg_rating, 2),
+                "player_count": int(len(pg)),
+                "avg_minutes": round(float(pg[minutes_col].mean()), 0) if len(pg) > 0 else 0,
+            }
+
+        # Top players by score (with minutes weighting)
+        top_players_df = group.nlargest(5, score_col)
+        top_players = []
+        for _, row in top_players_df.iterrows():
+            top_players.append({
+                "name": str(row.get(name_col, "")) if name_col else "",
+                "position": str(row.get(pos_col, "")) if pos_col else "",
+                "broad_pos": str(row.get("broad_pos", "")),
+                "rating": round(float(row[score_col]), 1),
+                "minutes": int(row.get(minutes_col, 0)) if minutes_col else 0,
+                "confidence": str(row.get(conf_col, "LOW")).upper() if conf_col else "LOW",
+            })
+
+        # Average confidence
+        if conf_col and conf_col in group.columns:
+            conf_counts = group[conf_col].astype(str).str.upper().value_counts().to_dict()
+        else:
+            conf_counts = {}
+
+        team_entry = {
+            "team": team_name,
+            "league": str(group[league_col].iloc[0])
+            if league_col and league_col in group.columns else "",
+            "season": str(group[season_col].iloc[0])
+            if season_col and season_col in group.columns else "",
+            "overall_rating": round(overall, 2),
+            "squad_size": int(len(group)),
+            "total_minutes": int(total_minutes),
+            "position_groups": pos_breakdown,
+            "top_players": top_players,
+            "confidence_distribution": conf_counts,
+        }
+        teams.append(team_entry)
+
+    # Sort by overall rating descending
+    teams.sort(key=lambda t: t["overall_rating"], reverse=True)
+
+    # Apply limit
+    teams = teams[:limit]
+
+    return _clean_json_value({"count": len(teams), "teams": teams})
+
+
 def get_prediction_summary() -> dict[str, Any]:
     """Return baseline prediction artifact metadata."""
     artifact_path = (
@@ -1122,17 +1267,37 @@ def get_artifacts_summary() -> dict:
     })
 
 
+def _get_scouting_queues():
+    """Build and cache scouting queues to avoid redundant computation.
+
+    Each of get_review_queue / get_watchlist / get_shortlist previously
+    called build_scouting_queues independently on the full ratings
+    DataFrame.  This helper computes the queues once per process and
+    reuses the result for all three endpoints.
+    """
+    if "scouting_queues" not in _wc_cache:
+        df = load_player_ratings()
+        if df.empty:
+            from scoutfootball.evaluation.scouting_queue import ScoutingQueues
+            _wc_cache["scouting_queues"] = ScoutingQueues(
+                review_queue=df, watchlist=df, shortlist=df,
+            )
+        else:
+            _wc_cache["scouting_queues"] = build_scouting_queues(
+                df,
+                run_id=_latest_run_id(),
+                reports_root=_settings().data_root / "reports",
+            )
+    return _wc_cache["scouting_queues"]
+
+
 def get_review_queue(limit: int = 200) -> dict:
     """Return low-confidence players from ratings data as a review queue."""
     df = load_player_ratings()
     if df.empty:
         return {"count": 0, "players": []}
 
-    queues = build_scouting_queues(
-        df,
-        run_id=_latest_run_id(),
-        reports_root=_settings().data_root / "reports",
-    )
+    queues = _get_scouting_queues()
     return _queue_payload(queues.review_queue, limit=limit)
 
 
@@ -1140,11 +1305,7 @@ def get_watchlist(limit: int = 100) -> dict:
     df = load_player_ratings()
     if df.empty:
         return {"count": 0, "players": []}
-    queues = build_scouting_queues(
-        df,
-        run_id=_latest_run_id(),
-        reports_root=_settings().data_root / "reports",
-    )
+    queues = _get_scouting_queues()
     return _queue_payload(queues.watchlist, limit=limit)
 
 
@@ -1152,11 +1313,7 @@ def get_shortlist(limit: int = 100) -> dict:
     df = load_player_ratings()
     if df.empty:
         return {"count": 0, "players": []}
-    queues = build_scouting_queues(
-        df,
-        run_id=_latest_run_id(),
-        reports_root=_settings().data_root / "reports",
-    )
+    queues = _get_scouting_queues()
     return _queue_payload(queues.shortlist, limit=limit)
 
 

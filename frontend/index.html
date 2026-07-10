@@ -38,6 +38,10 @@
                     <span class="nav-icon">△</span>
                     <span data-i18n="nav_matches">预测</span>
                 </button>
+                <button class="nav-action" data-view="teams" type="button">
+                    <span class="nav-icon">⬢</span>
+                    <span data-i18n="nav_teams">球队</span>
+                </button>
                 <button class="nav-action" data-view="scouting" type="button">
                     <span class="nav-icon">□</span>
                     <span data-i18n="nav_scouting">球探</span>
@@ -353,6 +357,69 @@
                         </div>
                     </article>
                 </div>
+            </section>
+
+            <section class="view" id="view-teams" aria-label="teams">
+                <article class="liquid-panel feature-hero">
+                    <div class="hero-copy">
+                        <p class="eyebrow" data-i18n="teams_kicker">球队实力分析</p>
+                        <h2 data-i18n="teams_title">球队评分聚合与位置组实力</h2>
+                        <p class="feature-note" data-i18n="teams_note">基于球员评分的分钟加权聚合，展示球队整体实力、位置组分布和核心球员。</p>
+                    </div>
+                    <div class="feature-metric-strip" aria-label="Team strength summary">
+                        <div><span class="metric-value" id="teams-count">0</span><span data-i18n="teams_metric_count">球队数</span></div>
+                        <div><span class="metric-value" id="teams-avg-rating">0.0</span><span data-i18n="teams_metric_avg">平均评分</span></div>
+                        <div><span class="metric-value" id="teams-top-rating">0.0</span><span data-i18n="teams_metric_top">最高评分</span></div>
+                    </div>
+                </article>
+
+                <div class="layout-2">
+                    <article class="liquid-panel table-panel">
+                        <div class="panel-head">
+                            <h3 data-i18n="teams_table_title">球队排名</h3>
+                            <select id="teams-league-filter" class="filter-select" aria-label="League filter">
+                                <option value="">ALL</option>
+                            </select>
+                        </div>
+                        <div class="table-scroll">
+                            <table class="data-table" id="teams-table">
+                                <thead>
+                                    <tr>
+                                        <th>#</th>
+                                        <th data-i18n="teams_col_team">球队</th>
+                                        <th data-i18n="teams_col_league">联赛</th>
+                                        <th data-i18n="teams_col_rating">评分</th>
+                                        <th data-i18n="teams_col_squad">阵容</th>
+                                        <th>GK</th>
+                                        <th>DEF</th>
+                                        <th>MID</th>
+                                        <th>ATT</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="teams-table-body">
+                                    <tr><td colspan="9" style="text-align:center;color:var(--text-muted)">Loading...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </article>
+
+                    <article class="liquid-panel compact-panel">
+                        <div class="panel-head">
+                            <h3 data-i18n="teams_detail_title">球队详情</h3>
+                            <span class="status-pill status-medium" id="teams-detail-pill">—</span>
+                        </div>
+                        <div id="teams-detail-content" style="padding:var(--space)">
+                            <p style="color:var(--text-muted)" data-i18n="teams_detail_placeholder">选择一支球队查看详情</p>
+                        </div>
+                    </article>
+                </div>
+
+                <article class="liquid-panel compact-panel" style="margin-top:var(--space)">
+                    <div class="panel-head">
+                        <h3 data-i18n="teams_chart_title">位置组实力对比</h3>
+                    </div>
+                    <div id="teams-chart" style="width:100%;height:400px"></div>
+                </article>
             </section>
 
             <section class="view" id="view-scouting" aria-label="scouting">

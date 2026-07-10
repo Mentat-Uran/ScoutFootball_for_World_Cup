@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import math
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -877,6 +878,9 @@ def _save_dc_calibration_report(
     actual_buckets = dict(score_buckets)
     n_matches = len(pairs)
 
+    log_loss_sum = 0.0
+    log_loss_count = 0
+
     for _, row in pairs.iterrows():
         home_id = str(row["team_id_home"])
         away_id = str(row["team_id_away"])
@@ -892,11 +896,15 @@ def _save_dc_calibration_report(
         actual_key = f"{hg}-{ag}" if f"{hg}-{ag}" in actual_buckets else "other"
         actual_buckets[actual_key] += 1
 
-        # Predicted probability for actual score
+        # Track log-loss for the actual score outcome
         if hg < pred.score_matrix.shape[0] and ag < pred.score_matrix.shape[1]:
-            pass  # Could track log-loss here
+            prob = float(pred.score_matrix.iloc[hg, ag])
+            if prob > 0:
+                log_loss_sum += -math.log(prob)
+                log_loss_count += 1
 
     # Write calibration report
+    log_loss_exact = round(log_loss_sum / max(log_loss_count, 1), 4)
     report_rows = []
     for bucket in ["0-0", "1-0", "0-1", "1-1", "2-0", "0-2", "2-1", "1-2", "other"]:
         report_rows.append({
@@ -906,6 +914,8 @@ def _save_dc_calibration_report(
         })
 
     cal_df = pd.DataFrame(report_rows)
+    cal_df["log_loss_exact"] = log_loss_exact
+    cal_df["n_matches"] = n_matches
     cal_df.to_parquet(artifact_dir / "dc_low_score_calibration.parquet", index=False)
 
 

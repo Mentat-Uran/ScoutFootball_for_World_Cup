@@ -5,6 +5,7 @@ const i18n = {
         nav_players: "球员",
         nav_value: "身价",
         nav_matches: "预测",
+        nav_teams: "球队",
         nav_scouting: "球探",
         nav_actions: "动作价值",
         nav_reports: "报告",
@@ -53,6 +54,20 @@ const i18n = {
         scouting_kicker: "本地优先决策台",
         scouting_title: "复核、观察与候选闭环",
         scouting_boundary: "服务端队列只读；复核状态、备注和球员页手动选择保存在当前浏览器。",
+        teams_kicker: "球队实力分析",
+        teams_title: "球队评分聚合与位置组实力",
+        teams_note: "基于球员评分的分钟加权聚合，展示球队整体实力、位置组分布和核心球员。",
+        teams_metric_count: "球队数",
+        teams_metric_avg: "平均评分",
+        teams_metric_top: "最高评分",
+        teams_table_title: "球队排名",
+        teams_col_team: "球队",
+        teams_col_league: "联赛",
+        teams_col_rating: "评分",
+        teams_col_squad: "阵容",
+        teams_detail_title: "球队详情",
+        teams_detail_placeholder: "选择一支球队查看详情",
+        teams_chart_title: "位置组实力对比",
         scouting_metric_review: "待复核",
         scouting_metric_short: "候选",
         scouting_search: "搜索球员、球队或原因",
@@ -216,6 +231,7 @@ const i18n = {
         nav_players: "Players",
         nav_value: "Value",
         nav_matches: "Prediction",
+        nav_teams: "Teams",
         nav_scouting: "Scouting",
         nav_actions: "Action Value",
         nav_reports: "Reports",
@@ -264,6 +280,20 @@ const i18n = {
         scouting_kicker: "Local-first decision desk",
         scouting_title: "Review, monitor, decide",
         scouting_boundary: "Server queues are read-only; review states, notes, and manual player selections stay in this browser.",
+        teams_kicker: "Team Strength Analysis",
+        teams_title: "Aggregated Ratings & Position Group Strength",
+        teams_note: "Minutes-weighted aggregation of player ratings, showing overall team strength, position group distribution and key players.",
+        teams_metric_count: "Teams",
+        teams_metric_avg: "Avg Rating",
+        teams_metric_top: "Top Rating",
+        teams_table_title: "Team Rankings",
+        teams_col_team: "Team",
+        teams_col_league: "League",
+        teams_col_rating: "Rating",
+        teams_col_squad: "Squad",
+        teams_detail_title: "Team Detail",
+        teams_detail_placeholder: "Select a team to view details",
+        teams_chart_title: "Position Group Strength Comparison",
         scouting_metric_review: "To review",
         scouting_metric_short: "Shortlist",
         scouting_search: "Search player, team, or reason",
@@ -456,6 +486,7 @@ function _staticUrlFor(apiPath) {
         "/health": "/data/health.json",
         "/artifacts": "/data/artifacts.json",
         "/teams": "/data/teams.json",
+        "/teams/strength": "/data/team_strength.json",
         "/ratings": "/data/ratings.json",
         "/ratings/meta": "/data/ratings_meta.json",
         "/ratings/snapshots": "/data/ratings.json",
@@ -581,6 +612,7 @@ let modelRuns = { count: 0, runs: [] };
 let watchlistData = [];
 let shortlistData = [];
 let actionValueSummary = { status: "no_data", players: [], metrics: {} };
+let teamStrengthData = { count: 0, teams: [] };
 let dataLoadErrors = new Set(); // tracks which data sources failed to load
 
 async function fetchRatings(position, league) {
@@ -675,6 +707,19 @@ async function fetchTeams() {
     } catch (err) {
         console.warn("Failed to fetch teams:", err);
         return [];
+    }
+}
+
+async function fetchTeamStrength(league) {
+    const params = new URLSearchParams();
+    if (league) params.set("league", league);
+    params.set("limit", "200");
+    try {
+        const data = await fetchJson("/teams/strength", { params });
+        return data;
+    } catch (err) {
+        console.warn("Failed to fetch team strength:", err);
+        return { count: 0, teams: [] };
     }
 }
 
@@ -2614,6 +2659,180 @@ function _renderErrorCases(errorCases) {
     <div style="font-size:0.75rem;line-height:1.5">${parts.join("")}</div>`;
 }
 
+function _posGroupRating(team, group) {
+    const pg = (team.position_groups || {})[group];
+    return pg ? pg.rating : null;
+}
+
+function _posGroupCount(team, group) {
+    const pg = (team.position_groups || {})[group];
+    return pg ? pg.player_count : 0;
+}
+
+function _ratingCell(rating) {
+    if (rating === null || rating === undefined || isNaN(rating)) {
+        return '<span style="color:var(--text-muted)">—</span>';
+    }
+    const cls = rating >= 60 ? "status-high" : rating >= 45 ? "status-medium" : "status-low";
+    return `<span class="status-pill ${cls}">${rating.toFixed(1)}</span>`;
+}
+
+async function renderTeams() {
+    const tbody = document.getElementById("teams-table-body");
+    if (!tbody) return;
+
+    // Fetch data if not loaded
+    if (teamStrengthData.count === 0) {
+        tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--text-muted)">Loading...</td></tr>';
+        try {
+            teamStrengthData = await fetchTeamStrength();
+        } catch {
+            tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--text-muted)">Failed to load</td></tr>';
+            return;
+        }
+    }
+
+    const teams = teamStrengthData.teams || [];
+    if (teams.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--text-muted)">No data</td></tr>';
+        return;
+    }
+
+    // Update summary metrics
+    const countEl = document.getElementById("teams-count");
+    const avgEl = document.getElementById("teams-avg-rating");
+    const topEl = document.getElementById("teams-top-rating");
+    if (countEl) countEl.textContent = teams.length;
+    const ratings = teams.map(t => t.overall_rating || 0);
+    const avg = ratings.length > 0 ? ratings.reduce((a, b) => a + b, 0) / ratings.length : 0;
+    const top = ratings.length > 0 ? Math.max(...ratings) : 0;
+    if (avgEl) avgEl.textContent = avg.toFixed(1);
+    if (topEl) topEl.textContent = top.toFixed(1);
+
+    // Populate league filter
+    const leagueFilter = document.getElementById("teams-league-filter");
+    if (leagueFilter && leagueFilter.options.length <= 1) {
+        const leagues = [...new Set(teams.map(t => t.league).filter(Boolean))].sort();
+        leagues.forEach(lg => {
+            const opt = document.createElement("option");
+            opt.value = lg;
+            opt.textContent = lg;
+            leagueFilter.appendChild(opt);
+        });
+    }
+
+    // Filter by league
+    const selectedLeague = leagueFilter ? leagueFilter.value : "";
+    const filtered = selectedLeague ? teams.filter(t => t.league === selectedLeague) : teams;
+
+    // Render table
+    tbody.innerHTML = filtered.map((team, i) => {
+        return `
+        <tr style="cursor:pointer" data-team="${escapeAttr(team.team)}">
+            <td>${i + 1}</td>
+            <td>${escapeHtml(team.team)}</td>
+            <td>${escapeHtml(team.league || "—")}</td>
+            <td><strong>${(team.overall_rating || 0).toFixed(1)}</strong></td>
+            <td>${team.squad_size || 0}</td>
+            <td>${_ratingCell(_posGroupRating(team, "GK"))}</td>
+            <td>${_ratingCell(_posGroupRating(team, "DEF"))}</td>
+            <td>${_ratingCell(_posGroupRating(team, "MID"))}</td>
+            <td>${_ratingCell(_posGroupRating(team, "ATT"))}</td>
+        </tr>`;
+    }).join("");
+
+    // Row click handler
+    tbody.querySelectorAll("tr[data-team]").forEach(row => {
+        row.addEventListener("click", () => {
+            const teamName = row.dataset.team;
+            const team = filtered.find(t => t.team === teamName);
+            if (team) renderTeamDetail(team);
+        });
+    });
+
+    // League filter handler
+    if (leagueFilter) {
+        leagueFilter.onchange = () => renderTeams();
+    }
+
+    // Render chart
+    renderTeamsChart(filtered);
+}
+
+function renderTeamDetail(team) {
+    const content = document.getElementById("teams-detail-content");
+    const pill = document.getElementById("teams-detail-pill");
+    if (!content) return;
+
+    const posGroups = ["GK", "DEF", "MID", "ATT"];
+    const posBreakdown = posGroups.map(g => {
+        const pg = (team.position_groups || {})[g];
+        if (!pg) return "";
+        return `
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:0.3rem 0;border-bottom:1px solid var(--border)">
+            <span style="font-weight:600">${g}</span>
+            <span>${_ratingCell(pg.rating)} <span style="color:var(--text-muted);font-size:0.8rem">(${pg.player_count} players)</span></span>
+        </div>`;
+    }).join("");
+
+    const topPlayers = (team.top_players || []).map(p => {
+        return `
+        <tr>
+            <td>${escapeHtml(p.name)}</td>
+            <td>${escapeHtml(p.position || "—")}</td>
+            <td>${(p.rating || 0).toFixed(1)}</td>
+            <td>${p.minutes || 0}</td>
+            <td><span class="status-pill ${(p.confidence || "LOW").toUpperCase() === "HIGH" ? "status-high" : (p.confidence || "LOW").toUpperCase() === "MEDIUM" ? "status-medium" : "status-low"}">${escapeHtml(p.confidence || "LOW")}</span></td>
+        </tr>`;
+    }).join("");
+
+    content.innerHTML = `
+        <h4 style="margin:0 0 0.5rem">${escapeHtml(team.team)}</h4>
+        <p style="color:var(--text-muted);margin:0 0 0.5rem">${escapeHtml(team.league || "—")} · ${escapeHtml(team.season || "—")}</p>
+        <div style="margin:0.5rem 0">
+            <strong>${(team.overall_rating || 0).toFixed(1)}</strong> overall · ${team.squad_size || 0} players · ${team.total_minutes || 0} total minutes
+        </div>
+        <div style="margin:0.8rem 0">${posBreakdown}</div>
+        ${topPlayers ? `
+        <p style="margin:0.8rem 0 0.3rem;font-size:0.72rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.04em">Top Players</p>
+        <table class="data-table" style="font-size:0.8rem">
+            <thead><tr><th>Name</th><th>Pos</th><th>Rating</th><th>Min</th><th>Conf</th></tr></thead>
+            <tbody>${topPlayers}</tbody>
+        </table>` : ""}`;
+    if (pill) pill.textContent = (team.overall_rating || 0).toFixed(1);
+}
+
+function renderTeamsChart(teams) {
+    const chartEl = document.getElementById("teams-chart");
+    if (!chartEl || typeof echarts === "undefined") return;
+
+    // Show top 15 teams
+    const top = teams.slice(0, 15);
+    const chart = echarts.init(chartEl);
+    if (appState.charts.teams) appState.charts.teams.dispose();
+    appState.charts.teams = chart;
+
+    const teamNames = top.map(t => t.team);
+    const series = ["GK", "DEF", "MID", "ATT"].map(group => ({
+        name: group,
+        type: "bar",
+        stack: "total",
+        data: top.map(t => {
+            const pg = (t.position_groups || {})[group];
+            return pg ? pg.rating : 0;
+        }),
+    }));
+
+    chart.setOption({
+        tooltip: { trigger: "axis", axisPointer: { type: "shadow" } },
+        legend: { data: ["GK", "DEF", "MID", "ATT"], bottom: 0 },
+        grid: { left: "3%", right: "4%", bottom: "15%", containLabel: true },
+        xAxis: { type: "category", data: teamNames, axisLabel: { rotate: 45, fontSize: 10 } },
+        yAxis: { type: "value", name: "Rating" },
+        series: series,
+    });
+}
+
 function renderReports() {
     const latestRun = (modelRuns.runs || [])[0] || {};
     const latestMetrics = latestRun.metrics || {};
@@ -3235,6 +3454,7 @@ async function renderActiveView() {
     if (appState.view === "players") renderPlayers();
     if (appState.view === "value") renderValue();
     if (appState.view === "matches") await renderMatches();
+    if (appState.view === "teams") await renderTeams();
     if (appState.view === "scouting") renderScouting();
     if (appState.view === "actions") renderActions();
     if (appState.view === "reports") renderReports();

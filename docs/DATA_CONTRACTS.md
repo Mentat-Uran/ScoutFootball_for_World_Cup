@@ -461,6 +461,43 @@ Value deviation analysis from OOF predictions.
 ### GET /predictions/meta
 Match prediction model metadata.
 
+### GET /teams/strength
+
+Aggregated team-level strength metrics derived from player ratings.
+
+**Query params**: `league` (optional), `season` (optional), `limit` (default 100)
+
+**Response**:
+```json
+{
+  "count": 2,
+  "teams": [
+    {
+      "team": "Team Alpha",
+      "league": "Premier League",
+      "season": "2526",
+      "overall_rating": 62.5,
+      "squad_size": 20,
+      "total_minutes": 25000,
+      "position_groups": {
+        "GK": { "rating": 55.0, "player_count": 2, "avg_minutes": 900 },
+        "DEF": { "rating": 60.0, "player_count": 6, "avg_minutes": 1500 },
+        "MID": { "rating": 65.0, "player_count": 7, "avg_minutes": 1800 },
+        "ATT": { "rating": 68.0, "player_count": 5, "avg_minutes": 1600 }
+      },
+      "top_players": [
+        { "name": "Player A", "position": "ST", "broad_pos": "ATT", "rating": 70.0, "minutes": 1800, "confidence": "HIGH" }
+      ],
+      "confidence_distribution": { "HIGH": 15, "MEDIUM": 3, "LOW": 2 }
+    }
+  ]
+}
+```
+
+The overall rating is minutes-weighted: `sum(score * minutes) / sum(minutes)`.
+Position groups are mapped from granular positions to GK, DEF, MID, ATT.
+Players with comma-joined team names (transferred players) are excluded.
+
 ---
 
 ## 9.5 Static Snapshot Contracts
