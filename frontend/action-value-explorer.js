@@ -90,9 +90,34 @@
         };
     }
 
+    function evidencePlayerIds(index) {
+        if (!index || typeof index !== "object") return [];
+        if (Array.isArray(index.available_player_ids)) {
+            return [...new Set(index.available_player_ids.map(text).filter(Boolean))];
+        }
+        return [...new Set((Array.isArray(index.player_index) ? index.player_index : [])
+            .map((row) => text(row && row.player_id))
+            .filter(Boolean))];
+    }
+
+    function hasEvidence(index, playerId) {
+        return evidencePlayerIds(index).includes(text(playerId));
+    }
+
+    function coreActionTypes(detail) {
+        const order = new Map([["pass", 0], ["carry", 1], ["shot", 2]]);
+        return (Array.isArray(detail && detail.action_types) ? detail.action_types : [])
+            .filter((row) => order.has(text(row && row.key)))
+            .slice()
+            .sort((a, b) => order.get(text(a.key)) - order.get(text(b.key)));
+    }
+
     return Object.freeze({
+        coreActionTypes,
+        evidencePlayerIds,
         filterOptions,
         filterRows,
+        hasEvidence,
         identitySummary,
         rowCompetitions,
         rowSeasons,

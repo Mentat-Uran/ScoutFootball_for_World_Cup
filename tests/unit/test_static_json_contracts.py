@@ -24,6 +24,7 @@ _FRONTEND_DATA = _PROJECT_ROOT / "frontend" / "data"
 # If the file is a list, we only check it's non-empty.
 _STATIC_FILES: list[tuple[str, list[str]]] = [
     ("action_values.json", ["status", "count", "metrics", "players"]),
+    ("action_value_evidence.json", ["status", "schema_version", "coverage", "players"]),
     ("artifacts.json", ["artifacts", "data_source_label", "license_attribution"]),
     ("ratings.json", ["count", "players"]),
     ("review_queue.json", ["count", "players"]),
@@ -110,3 +111,16 @@ def test_h2h_static_pairs_and_alias_contract() -> None:
         for pair in data["pairs"].values()
         for row in pair["head_to_head"]
     )
+
+
+def test_action_value_evidence_static_contract() -> None:
+    data = _read_static_json("action_value_evidence.json")
+    assert isinstance(data, dict)
+    assert data["status"] == "ok"
+    assert data["schema_version"] == "1.0"
+    assert data["coverage"]["match_count"] == 3
+    assert data["coverage"]["source_coverage"] == "sample"
+    assert data["coverage"]["xt_grid_scope"] == "sample_recomputed"
+    assert data["coverage"]["aggregate_comparability"] == "not_directly_comparable"
+    assert "5503" in data["players"]
+    assert len(data["players"]["5503"]["matches"]) == 3

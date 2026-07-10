@@ -47,7 +47,7 @@ ScoutFootball 是本地优先的足球分析平台，把公开数据、手动导
 | **身价** (€) | 身价偏离散点图、高估/低估排名 | `/value-summary` API |
 | **预测** (△) | 比赛预测、比分概率矩阵、交锋记录与近期状态 | `/predictions/{home}/{away}`、`/predictions/{home}/{away}/h2h` API |
 | **球探** (□) | 复核筛选、本地状态/备注、watchlist 快照、CSV 导出 | `/review-queue`、`/watchlist`、`/shortlist` API |
-| **动作价值** (⌁) | xT/VAEP 排名、样本筛选、战术板热区联动 | `/action-values` API |
+| **动作价值** (⌁) | xT/VAEP 排名、样本筛选、3 场样本的球员→比赛动作证据、战术板热区联动 | `/action-values`、`/action-values/evidence/{player_id}` API |
 | **报告** (▣) | 模型运行记录、后端契约、指标 | `/reports/model-runs` API |
 
 **4 个世界杯视图：**
@@ -107,7 +107,7 @@ PYTHONPATH=src uv run python -m scoutfootball train-rating-nn
 - 联赛截距偏差存在（Serie A -16.6、Ligue 1 -11.3）
 
 **数据覆盖：**
-- 动作价值产物有 15,062 行 xT/VAEP，仍只代表当前 StatsBomb Open Data 样本，不是全量联赛覆盖
+- 动作价值产物有 15,062 行 xT/VAEP；比赛证据下钻仅覆盖仓库跟踪的 3 场事件样本，样本重算 xT 不能与完整聚合榜直接比较或相加，二者都不是全量联赛覆盖
 - FBref 数据限于 5 赛季；粗位置映射需要 StatsBomb/阵型数据
 - 世界杯阵容已填充，但五大联赛外的评分覆盖仍不完整
 

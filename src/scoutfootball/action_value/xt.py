@@ -436,36 +436,14 @@ def compute_xt_from_actions(
     df = pd.read_parquet(actions_path)
     logger.info("Loaded %d actions", len(df))
 
-    # 2. Compute xT grid
-    logger.info("Computing shot/goal matrices (vectorized)...")
-    shot_prob, goal_prob = compute_shot_goal_matrices_vectorized(
-        df, x_cells, y_cells,
-    )
-    logger.info("Computing transition matrix (vectorized)...")
-    transitions = compute_transition_matrix_vectorized(df, x_cells, y_cells)
-
-    logger.info("Iterating xT convergence...")
-    xt_grid = iterate_xt(shot_prob, goal_prob, transitions, x_cells, y_cells)
-    logger.info(
-        "xT grid: min=%.6f, max=%.6f, mean=%.6f",
-        xt_grid.min(), xt_grid.max(), xt_grid.mean(),
-    )
+    xt_grid, df = compute_xt_values(df, x_cells=x_cells, y_cells=y_cells)
 
     # 3. Save xT grid
     xt_grid_path.parent.mkdir(parents=True, exist_ok=True)
     np.save(xt_grid_path, xt_grid)
     logger.info("Saved xT grid to %s", xt_grid_path)
 
-    # 4. Compute per-action xT delta
-    logger.info("Computing per-action xT values (batch)...")
-    xt_delta = batch_action_xt_value(df, xt_grid, x_cells, y_cells)
-    df["xt_delta"] = xt_delta
-    logger.info(
-        "xT delta stats: min=%.6f, max=%.6f, mean=%.6f, std=%.6f",
-        xt_delta.min(), xt_delta.max(), xt_delta.mean(), xt_delta.std(),
-    )
-
-    # 5. Join season info
+    # 4. Join season info
     logger.info("Joining season info from %s", matches_path)
     matches = pd.read_parquet(matches_path)
     matches["match_id"] = matches["match_id"].astype(str)
@@ -476,7 +454,7 @@ def compute_xt_from_actions(
     df = df.merge(season_map, on="match_id", how="left")
     df.rename(columns={"season_name": "season", "competition_name": "competition"}, inplace=True)
 
-    # 6. Join player_name
+    # 5. Join player_name
     logger.info("Joining player names from %s", events_path)
     events = pd.read_parquet(events_path, columns=["player_id", "player_name"])
     events["player_id"] = events["player_id"].astype(str)
@@ -487,5 +465,44 @@ def compute_xt_from_actions(
     logger.info(
         "Final actions with xT: %d rows, %d unique players",
         len(df), df["player_id"].nunique(),
+    )
+    return xt_grid, df
+
+
+def compute_xt_values(
+    actions_df: pd.DataFrame,
+    x_cells: int = DEFAULT_X_CELLS,
+    y_cells: int = DEFAULT_Y_CELLS,
+) -> tuple[np.ndarray, pd.DataFrame]:
+    """Compute an xT grid and per-action values without filesystem side effects.
+
+    This is the reusable in-memory core behind :func:`compute_xt_from_actions`.
+    It is intentionally independent of match/player metadata joins so small
+    local samples can be explored without manufacturing full-data artifacts.
+    """
+    if actions_df.empty:
+        return np.zeros((y_cells, x_cells), dtype=float), actions_df.copy()
+
+    df = actions_df.copy()
+    logger.info("Computing shot/goal matrices (vectorized)...")
+    shot_prob, goal_prob = compute_shot_goal_matrices_vectorized(
+        df,
+        x_cells,
+        y_cells,
+    )
+    logger.info("Computing transition matrix (vectorized)...")
+    transitions = compute_transition_matrix_vectorized(df, x_cells, y_cells)
+    logger.info("Iterating xT convergence...")
+    xt_grid = iterate_xt(shot_prob, goal_prob, transitions, x_cells, y_cells)
+
+    logger.info("Computing per-action xT values (batch)...")
+    xt_delta = batch_action_xt_value(df, xt_grid, x_cells, y_cells)
+    df["xt_delta"] = xt_delta
+    logger.info(
+        "xT sample: grid_min=%.6f grid_max=%.6f delta_mean=%.6f delta_std=%.6f",
+        xt_grid.min(),
+        xt_grid.max(),
+        xt_delta.mean(),
+        xt_delta.std(),
     )
     return xt_grid, df

@@ -50,7 +50,7 @@ The `frontend/` directory contains a static analysis workbench with a consistent
 | **Value** (€) | Value deviation scatter, over/under-valued rankings | `/value-summary` API |
 | **Matches** (△) | Match prediction, score probability matrix, head-to-head history and recent form | `/predictions/{home}/{away}`, `/predictions/{home}/{away}/h2h` API |
 | **Scouting** (□) | Review queue filters, local status/notes, watchlist snapshots, CSV plus versioned workspace import/export | `/review-queue`, `/watchlist`, `/shortlist` API + browser-local workspace JSON |
-| **Actions** (⌁) | xT/VAEP ranking, sample filters, tactical heatmap handoff | `/action-values` API |
+| **Actions** (⌁) | xT/VAEP ranking, sample filters, 3-match player→match action evidence, tactical heatmap handoff | `/action-values`, `/action-values/evidence/{player_id}` API |
 | **Reports** (▣) | Model runs, backend contracts, metrics | `/reports/model-runs` API |
 
 **4 World Cup Views:**

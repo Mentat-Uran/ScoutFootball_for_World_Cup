@@ -14,6 +14,8 @@ from scoutfootball import __version__
 from scoutfootball.api import (
     _clean_json_value,
     _settings,
+    get_action_value_evidence,
+    get_action_value_evidence_index,
     get_action_value_summary,
     get_artifacts_summary,
     get_head_to_head,
@@ -179,6 +181,14 @@ def create_app() -> FastAPI:
     @app.get("/action-values")
     def action_values(limit: int = 20, offset: int = 0):
         return get_action_value_summary(limit=limit, offset=offset)
+
+    @app.get("/action-values/evidence")
+    def action_value_evidence_index():
+        return get_action_value_evidence_index()
+
+    @app.get("/action-values/evidence/{player_id}")
+    def action_value_evidence(player_id: str):
+        return get_action_value_evidence(player_id)
 
     @app.get("/ratings")
     def ratings(

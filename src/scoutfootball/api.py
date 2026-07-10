@@ -11,6 +11,12 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from scoutfootball.action_value.evidence import (
+    get_action_value_evidence as _get_action_value_evidence,
+)
+from scoutfootball.action_value.evidence import (
+    get_action_value_evidence_index as _get_action_value_evidence_index,
+)
 from scoutfootball.app.data_loader import (
     _MISSING,
     _TTLCache,
@@ -1391,6 +1397,16 @@ def get_action_value_summary(
         "xt_players": xt_page.to_dict(orient="records"),
         "vaep_players": vaep_page.to_dict(orient="records"),
     })
+
+
+def get_action_value_evidence_index() -> dict[str, Any]:
+    """Return the players and coverage available in the match evidence sample."""
+    return _clean_json_value(_get_action_value_evidence_index())
+
+
+def get_action_value_evidence(player_id: str) -> dict[str, Any]:
+    """Return match, action-type, zone and time evidence for one player."""
+    return _clean_json_value(_get_action_value_evidence(player_id))
 
 
 def get_artifacts_summary() -> dict:

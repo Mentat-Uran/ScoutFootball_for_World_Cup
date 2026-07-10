@@ -65,3 +65,26 @@ test("identity summary prefers the API coverage report over page length", () => 
     assert.equal(result.mapped, 6698);
     assert.equal(result.rate, 6698 / 6771);
 });
+
+test("evidence index normalizes player IDs and detects availability", () => {
+    const index = { available_player_ids: [5503, "5477", "5503", null] };
+    assert.deepEqual(explorer.evidencePlayerIds(index), ["5503", "5477"]);
+    assert.equal(explorer.hasEvidence(index, 5503), true);
+    assert.equal(explorer.hasEvidence(index, "missing"), false);
+});
+
+test("core action evidence keeps pass carry shot in product order", () => {
+    const detail = {
+        action_types: [
+            { key: "shot", n_actions: 2 },
+            { key: "receipt", n_actions: 8 },
+            { key: "pass", n_actions: 20 },
+            { key: "carry", n_actions: 5 },
+        ],
+    };
+    assert.deepEqual(explorer.coreActionTypes(detail).map((row) => row.key), [
+        "pass",
+        "carry",
+        "shot",
+    ]);
+});

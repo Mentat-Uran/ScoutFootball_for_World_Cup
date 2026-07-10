@@ -517,6 +517,32 @@ independently to each model section.
 Coverage rates are derived from the current VAEP rows; when the VAEP artifact
 is empty, all counts/rates are 0 and no exception is raised.
 
+### GET /action-values/evidence
+
+Index of players that have match-level xT evidence in the tracked
+`events_sample.parquet` snapshot. The response contains `coverage`,
+`player_index`, and `available_player_ids`. The current tracked snapshot covers
+exactly 3 matches and 69 players; it is not a full competition extract.
+
+### GET /action-values/evidence/{player_id}
+
+Match/action detail for one player in that tracked sample. The response includes
+per-match pass/carry/shot counts and xT totals, action-type, destination-zone and
+time-bucket breakdowns, plus the 12 highest-value actions with coordinates. A
+player outside the sample returns `status: "not_found"` with empty arrays and
+the same coverage metadata.
+
+The evidence xT grid is recomputed from the three tracked matches. Therefore
+these match-level xT values are **not directly comparable or additive** to the
+full `player_action_value.parquet` aggregate. This limitation is machine-readable
+as `coverage.xt_grid_scope: "sample_recomputed"` and
+`coverage.aggregate_comparability: "not_directly_comparable"`.
+
+Static deployments use `frontend/data/action_value_evidence.json`, a versioned
+`{schema_version, coverage, player_index, players}` snapshot. Both endpoints
+retain `StatsBomb Open Data` source attribution and degrade to explicit
+`no_data`/`error` states when the tracked sample cannot be loaded.
+
 ### GET /review-queue
 Low-confidence players for review.
 

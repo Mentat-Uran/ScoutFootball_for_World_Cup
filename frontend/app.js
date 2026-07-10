@@ -538,6 +538,7 @@ function _staticUrlFor(apiPath) {
         "/predictions/calibration": "/data/predictions_calibration.json",
         "/value-summary": "/data/value_summary.json",
         "/action-values": "/data/action_values.json",
+        "/action-values/evidence": "/data/action_value_evidence.json",
         "/review-queue": "/data/review_queue.json",
         "/watchlist": "/data/watchlist.json",
         "/shortlist": "/data/shortlist.json",
@@ -561,6 +562,8 @@ function _staticUrlFor(apiPath) {
     // Player profile: use pre-exported file if available.
     const player = m.match(/^\/players?\/(.+)$/);
     if (player) return `/data/player_profiles/${encodeURIComponent(_teamSlug(decodeURIComponent(player[1])))}.json`;
+    const actionEvidence = m.match(/^\/action-values\/evidence\/(.+)$/);
+    if (actionEvidence) return "/data/action_value_evidence.json";
     // H2H: /predictions/<home>/<away>/h2h → pairs file (searched client-side by key)
     const h2h = m.match(/^\/predictions\/(.+)\/(.+)\/h2h$/);
     if (h2h) return "/data/h2h_pairs.json";
@@ -660,6 +663,12 @@ let modelRuns = { count: 0, runs: [] };
 let watchlistData = [];
 let shortlistData = [];
 let actionValueSummary = { status: "no_data", players: [], metrics: {} };
+let actionValueEvidenceIndex = {
+    status: "no_data",
+    coverage: {},
+    player_index: [],
+    available_player_ids: [],
+};
 let teamStrengthData = { count: 0, teams: [] };
 let dataLoadErrors = new Set(); // tracks which data sources failed to load
 
@@ -1917,6 +1926,44 @@ async function renderHeadToHead(home, away) {
     if (statusPill) {
         statusPill.textContent = String(totalMeetings);
         statusPill.className = `status-pill ${totalMeetings > 0 ? "status-high" : "status-medium"}`;
+    }
+}
+
+async function fetchActionValueEvidenceIndex() {
+    try {
+        const data = await fetchJson("/action-values/evidence");
+        if (data && data.players && !Array.isArray(data.available_player_ids)) {
+            const playerIndex = Array.isArray(data.player_index) ? data.player_index : [];
+            return {
+                status: data.status || "ok",
+                schema_version: data.schema_version,
+                coverage: data.coverage || {},
+                player_index: playerIndex,
+                available_player_ids: Object.keys(data.players),
+            };
+        }
+        return data || { status: "no_data", coverage: {}, available_player_ids: [] };
+    } catch (err) {
+        console.warn("Failed to fetch action-value evidence index:", err);
+        return { status: "no_data", coverage: {}, player_index: [], available_player_ids: [] };
+    }
+}
+
+async function fetchActionValueEvidence(playerId) {
+    try {
+        const data = await fetchJson(`/action-values/evidence/${encodeURIComponent(playerId)}`);
+        if (data && data.players && typeof data.players === "object") {
+            return data.players[String(playerId)] || {
+                status: "not_found",
+                player_id: String(playerId),
+                matches: [],
+                coverage: data.coverage || {},
+            };
+        }
+        return data;
+    } catch (err) {
+        console.warn("Failed to fetch player action-value evidence:", err);
+        return { status: "error", player_id: String(playerId), matches: [], coverage: {} };
     }
 }
 
@@ -3855,17 +3902,33 @@ function renderActions() {
         }
     }
 
+    const evidenceNote = document.getElementById("action-evidence-note");
+    const evidenceIds = new Set(explorer
+        ? explorer.evidencePlayerIds(actionValueEvidenceIndex)
+        : (actionValueEvidenceIndex.available_player_ids || []).map(String));
+    if (evidenceNote) {
+        const evidenceCoverage = actionValueEvidenceIndex.coverage || {};
+        const available = actionValueEvidenceIndex.status === "ok";
+        evidenceNote.innerHTML = available
+            ? `<strong>${Number(evidenceCoverage.match_count || 0).toLocaleString()}</strong> ${escapeHtml(appState.lang === "zh" ? "场可复现比赛证据" : "reproducible evidence matches")} · <strong>${evidenceIds.size.toLocaleString()}</strong> ${escapeHtml(appState.lang === "zh" ? "名球员可下钻" : "players available for drill-down")}<span>${escapeHtml(appState.lang === "zh" ? "仅限仓库内 StatsBomb 样例，点击带“比赛证据”标记的球员查看。" : "Tracked StatsBomb sample only. Open a player marked Match evidence.")}</span>`
+            : `<strong>0</strong> ${escapeHtml(appState.lang === "zh" ? "场比赛证据可用" : "evidence matches available")}<span>${escapeHtml(appState.lang === "zh" ? "聚合排名仍可使用；比赛级样例未加载。" : "Aggregate rankings remain available; match sample is not loaded.")}</span>`;
+    }
+
     actionList.innerHTML = players.length > 0
-        ? players.map((player, index) => `
+        ? players.map((player, index) => {
+            const hasEvidence = evidenceIds.has(String(player.player_id || ""));
+            return `
             <button class="rank-item action-rank-item" type="button" data-action-index="${index}" aria-label="${escapeAttr(`${actionPlayerLabel(player, mode)} details`)}">
                 <div>
                     <strong>${escapeHtml(actionPlayerLabel(player, mode))}</strong>
                     <span class="rank-meta">${escapeHtml(actionPlayerMeta(player, mode))}</span>
+                    ${hasEvidence ? `<span class="action-evidence-badge">${escapeHtml(appState.lang === "zh" ? "比赛证据" : "Match evidence")}</span>` : ""}
                     ${Number(player.estimated_minutes || player.minutes || 0) < 900 ? `<div class="sample-warning">${escapeHtml(appState.lang === "zh" ? "小样本，仅供研究" : "Small sample; research use only")}</div>` : ""}
                 </div>
                 <span class="status-pill status-medium">${safeNum(player[metricKey] ?? player[legacyMetricKey] ?? 0, 3)}</span>
             </button>
-        `).join("")
+        `;
+        }).join("")
         : (() => {
             const loadFailed = dataLoadErrors.has("action-values");
             const msg = loadFailed
@@ -4038,9 +4101,79 @@ function showActionValueDetail(player, mode) {
         <dl class="action-detail-facts">${facts.map(([label, value]) => `<div><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value)}</dd></div>`).join("")}</dl>
         <div class="action-detail-boundary">${escapeHtml(mode === "vaep"
             ? (appState.lang === "zh" ? "VAEP 按球员—球队生涯聚合；赛季仅用于说明底层覆盖范围，不能解释为单赛季 VAEP。" : "VAEP is aggregated by player-team career. Seasons describe source coverage and are not season-level VAEP values.")
-            : (appState.lang === "zh" ? "xT 行对应一个球员—球队—赛季样本。" : "Each xT row represents a player-team-season sample."))}</div>`;
+            : (appState.lang === "zh" ? "xT 行对应一个球员—球队—赛季样本。" : "Each xT row represents a player-team-season sample."))}</div>
+        <section class="action-evidence-section" aria-labelledby="action-evidence-title">
+            <div class="action-evidence-head">
+                <div><p class="eyebrow">StatsBomb sample evidence</p><h4 id="action-evidence-title">${escapeHtml(appState.lang === "zh" ? "比赛级 xT 证据" : "Match-level xT evidence")}</h4></div>
+                <span class="status-pill status-medium" id="action-evidence-status">loading</span>
+            </div>
+            <div id="action-evidence-content" data-player-id="${escapeAttr(String(player.player_id || ""))}" aria-live="polite"><p class="action-evidence-message">${escapeHtml(appState.lang === "zh" ? "正在加载比赛证据..." : "Loading match evidence...")}</p></div>
+        </section>`;
     if (typeof dialog.showModal === "function") dialog.showModal();
     else dialog.setAttribute("open", "");
+    void renderActionValueEvidence(player);
+}
+
+function actionEvidenceBreakdown(title, rows) {
+    const items = Array.isArray(rows) ? rows : [];
+    return `<section class="action-evidence-breakdown"><h5>${escapeHtml(title)}</h5>${items.length
+        ? items.map((row) => {
+            const label = String(row.key || "unknown").replaceAll("_", " ");
+            const value = Number(row.xt_total || 0);
+            return `<div class="action-evidence-breakdown-row"><span>${escapeHtml(label)} <small>${Number(row.n_actions || 0).toLocaleString()}</small></span><strong class="${value >= 0 ? "positive" : "negative"}">${value >= 0 ? "+" : ""}${safeNum(value, 3)}</strong></div>`;
+        }).join("")
+        : `<p class="action-evidence-message">–</p>`}</section>`;
+}
+
+async function renderActionValueEvidence(player) {
+    const target = document.getElementById("action-evidence-content");
+    const status = document.getElementById("action-evidence-status");
+    const playerId = String(player.player_id || "");
+    if (!target || !playerId) {
+        if (target) target.innerHTML = `<p class="action-evidence-message">${escapeHtml(appState.lang === "zh" ? "缺少球员 ID，无法匹配比赛证据。" : "Player ID is missing; evidence cannot be matched.")}</p>`;
+        if (status) status.textContent = "N/A";
+        return;
+    }
+
+    const data = await fetchActionValueEvidence(playerId);
+    if (target.dataset.playerId !== playerId) return;
+    const coverage = data && data.coverage ? data.coverage : {};
+    if (!data || data.status !== "ok") {
+        target.innerHTML = `<div class="action-detail-boundary">${escapeHtml(appState.lang === "zh" ? `当前仓库仅有 ${Number(coverage.match_count || 0)} 场比赛级样例，该球员不在样例中；上方聚合值仍来自更广的 StatsBomb 产物。` : `The repository contains ${Number(coverage.match_count || 0)} match-level samples and this player is not present. The aggregate value above comes from the broader StatsBomb artifact.`)}</div>`;
+        if (status) {
+            status.textContent = "NO MATCH";
+            status.className = "status-pill status-low";
+        }
+        return;
+    }
+
+    const matches = Array.isArray(data.matches) ? data.matches : [];
+    const explorer = typeof ACTION_VALUE_EXPLORER !== "undefined" ? ACTION_VALUE_EXPLORER : null;
+    const actionTypes = explorer ? explorer.coreActionTypes(data) : (data.action_types || []);
+    const matchCards = matches.map((match) => `
+        <article class="action-evidence-match-card">
+            <div><strong>${escapeHtml(match.match_label || `Match ${match.match_id}`)}</strong><span>${escapeHtml(match.team_name || "–")} · ID ${escapeHtml(String(match.match_id || "–"))}</span></div>
+            <div class="action-evidence-match-score"><span>xT</span><strong>${safeNum(match.xt_total || 0, 3)}</strong></div>
+            <dl><div><dt>pass</dt><dd>${Number(match.n_pass || 0)} / ${safeNum(match.xt_pass || 0, 3)}</dd></div><div><dt>carry</dt><dd>${Number(match.n_carry || 0)} / ${safeNum(match.xt_carry || 0, 3)}</dd></div><div><dt>shot</dt><dd>${Number(match.n_shot || 0)} / ${safeNum(match.xt_shot || 0, 3)}</dd></div></dl>
+        </article>`).join("");
+    const topActions = (Array.isArray(data.top_actions) ? data.top_actions : []).slice(0, 8);
+    const topActionsHtml = topActions.length
+        ? `<div class="table-scroll action-evidence-table-scroll"><table class="action-evidence-table"><thead><tr><th>${escapeHtml(appState.lang === "zh" ? "时间" : "Time")}</th><th>${escapeHtml(appState.lang === "zh" ? "动作" : "Action")}</th><th>xT</th><th>${escapeHtml(appState.lang === "zh" ? "坐标" : "Coordinates")}</th></tr></thead><tbody>${topActions.map((action) => `<tr><td>${Number(action.minute || 0)}:${String(Number(action.second || 0)).padStart(2, "0")}</td><td>${escapeHtml(action.action_type || "–")}<span class="rank-meta">${escapeHtml(action.match_label || action.match_id || "")}</span></td><td><strong>${Number(action.xt_delta || 0) >= 0 ? "+" : ""}${safeNum(action.xt_delta || 0, 4)}</strong></td><td>${safeNum(action.start_x || 0, 0)},${safeNum(action.start_y || 0, 0)} → ${safeNum(action.end_x || 0, 0)},${safeNum(action.end_y || 0, 0)}</td></tr>`).join("")}</tbody></table></div>`
+        : `<p class="action-evidence-message">${escapeHtml(appState.lang === "zh" ? "没有可展示的动作。" : "No actions available.")}</p>`;
+
+    target.innerHTML = `
+        <div class="action-evidence-scope"><strong>${matches.length}</strong> ${escapeHtml(appState.lang === "zh" ? "场比赛" : "matches")} · <strong>${Number(data.n_actions || 0).toLocaleString()}</strong> ${escapeHtml(appState.lang === "zh" ? "个动作" : "actions")} · xT ${safeNum(data.xt_total || 0, 3)}<span>${escapeHtml(coverage.scope_note || "StatsBomb Open Data sample only")}</span></div>
+        <div class="action-evidence-match-grid">${matchCards}</div>
+        <div class="action-evidence-breakdown-grid">
+            ${actionEvidenceBreakdown(appState.lang === "zh" ? "动作类型" : "Action types", actionTypes)}
+            ${actionEvidenceBreakdown(appState.lang === "zh" ? "终点区域" : "Destination zones", data.zones)}
+            ${actionEvidenceBreakdown(appState.lang === "zh" ? "时间段" : "Time buckets", data.time_buckets)}
+        </div>
+        <div class="action-evidence-top"><h5>${escapeHtml(appState.lang === "zh" ? "高价值动作" : "Highest-value actions")}</h5>${topActionsHtml}</div>`;
+    if (status) {
+        status.textContent = `${matches.length} MATCH`;
+        status.className = "status-pill status-high";
+    }
 }
 
 function generateXTHeatmapGrid(summary) {
@@ -6654,7 +6787,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     loadWatchlistNotes();
 
     // Load real data from API in parallel
-    const [ratingsData, meta, artifacts, teams, valueData, reviewData, predictionArtifact, predictionCalibrationData, runs, watchlistRows, shortlistRows, actionValues, licenseResp] = await Promise.all([
+    const [ratingsData, meta, artifacts, teams, valueData, reviewData, predictionArtifact, predictionCalibrationData, runs, watchlistRows, shortlistRows, actionValues, actionEvidenceIndex, licenseResp] = await Promise.all([
         fetchRatings(),
         fetchRatingsMeta(),
         fetchArtifacts(),
@@ -6667,6 +6800,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         fetchWatchlist(),
         fetchShortlist(),
         fetchActionValues(),
+        fetchActionValueEvidenceIndex(),
         fetchLicense(),
     ]);
 
@@ -6681,6 +6815,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     watchlistData = watchlistRows;
     shortlistData = shortlistRows;
     actionValueSummary = actionValues;
+    actionValueEvidenceIndex = actionEvidenceIndex;
     licenseData = licenseResp;
     if (players.length > 0) {
         appState.selectedPlayerKey = players[0].key;

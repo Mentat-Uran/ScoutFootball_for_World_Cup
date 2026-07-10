@@ -263,7 +263,8 @@ ScoutFootball 的长期形态是本地优先的足球数据研究平台，而不
 - [x] 建立版本化 scouting workspace v1.1 导入/导出和审计字段：支持 workspace ID、revision、时间戳、导入预览、同键冲突检测、安全合并和显式替换；仍不增加生产写 API。
 - [x] 补齐 VAEP `player_id -> player_name/team/season` 映射与未映射覆盖率。
 - [x] 动作价值多维下钻：球队/赛季/赛事/分钟/搜索联合筛选，筛选选项动态聚合，身份覆盖率摘要，未映射球员回退显示 ID（`frontend/action-value-explorer.js`）。
-- [ ] 增加动作类型下钻（pass/carry/shot 拆分）和球员级时间序列；在评分融合前完成独立评估。
+- [x] 增加 3 场跟踪样本的球员→比赛→动作证据下钻：pass/carry/shot、目标区域、时间段、高价值动作坐标，以及 API/静态回退和样本外边界提示。
+- [ ] 生成可版本化的全量比赛级动作产物，补比赛日期/分钟/赛事覆盖和置信区间；在评分融合前完成时间切分与独立评估。3 场样本重算的 xT 不得与完整聚合榜直接比较或相加。
 
 ### P1.2：测试与静态导出可靠性（2026-06-23）
 
@@ -413,6 +414,7 @@ ScoutFootball 的长期形态是本地优先的足球数据研究平台，而不
 - [x] 输出 internal actions schema 文档，并说明它和 SPADL/atomic-SPADL、Common Data Format 的字段映射关系。
 - [x] 输出 `data/gold/feature_store/player_action_value.parquet`。
 - [x] 生成球员 xT 排行榜、球队 xT 热区图、球员传球/带球推进价值图。
+- [x] 基于仓库跟踪的 3 场事件样本提供比赛级证据 API、静态快照和前端下钻；明确样本重算 xT 与完整聚合产物不可直接比较。
 - [x] 评估 socceraction 作为依赖的可维护性，优先复用其 SPADL/xT/VAEP 能力。（评估结果写入 DATA_CONTRACTS.md Section 11）
 - [x] 明确 StatsBomb 数据引用要求：公开展示研究或图表时必须注明数据源。（api.py `_STATSBOMB_ATTRIBUTION` + 前端 `attribution_required` 已实现）
 

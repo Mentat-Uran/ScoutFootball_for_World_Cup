@@ -72,7 +72,7 @@ chmod +x scripts/start.sh
 | World Cup Schedule/Squads/Compare/Probability | 世界杯四视图 | `/world-cup/*`, `/worldcup/teams` |
 | - | 总览 | `/artifacts`, `/health`, `/ratings/meta` |
 | Scouting Queue | 球探 | `/review-queue`, `/watchlist`, `/shortlist` |
-| Action Value | 动作价值 | `/action-values` |
+| Action Value | 动作价值 | `/action-values`, `/action-values/evidence/{player_id}` |
 | - | 报告 | `/reports/model-runs` |
 
 ---
