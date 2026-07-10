@@ -5601,7 +5601,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     setView("overview");
 
     // Load scouting localStorage state
-    ensureScoutingWorkspaceMeta();
+    if (typeof SCOUTING_WORKSPACE !== "undefined") ensureScoutingWorkspaceMeta();
     loadScoutQueueStatuses();
     loadScoutShortlistNotes();
     loadWatchlistNotes();
@@ -5812,7 +5812,10 @@ function touchScoutingWorkspace(lastAction = "local-edit") {
         created_at: current.created_at,
         updated_at: now,
         exported_at: now,
-        revision: current.revision + (coalescedEdit ? 0 : 1),
+        revision: Math.min(
+            current.revision + (coalescedEdit ? 0 : 1),
+            Number.MAX_SAFE_INTEGER,
+        ),
         last_action: lastAction,
         imported_from: current.imported_from,
         app_version: APP_VERSION,

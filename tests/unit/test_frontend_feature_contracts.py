@@ -77,6 +77,7 @@ def test_restored_workbenches_expose_filters_and_boundaries() -> None:
 
 def test_scouting_workspace_is_loaded_before_the_app_and_has_a_versioned_contract() -> None:
     html = _read(FRONTEND / "index.html")
+    app_js = _read(FRONTEND / "app.js")
     workspace_js = _read(FRONTEND / "scouting-workspace.js")
 
     assert html.index('src="scouting-workspace.js"') < html.index('src="app.js"')
@@ -85,6 +86,8 @@ def test_scouting_workspace_is_loaded_before_the_app_and_has_a_versioned_contrac
     assert "revision" in workspace_js
     assert "analyzeConflict" in workspace_js
     assert "mergeWorkspaces" in workspace_js
+    assert 'if (typeof SCOUTING_WORKSPACE !== "undefined") ensureScoutingWorkspaceMeta();' in app_js
+    assert "Number.MAX_SAFE_INTEGER" in app_js
 
 
 def test_static_server_404_continues_to_mapped_json_fallback() -> None:
