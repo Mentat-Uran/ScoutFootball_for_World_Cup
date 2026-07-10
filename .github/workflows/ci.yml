@@ -57,4 +57,12 @@ jobs:
         with:
           node-version: "20"
 
-      - run: node --check frontend/app.js
+      - name: Check frontend JavaScript
+        run: |
+          node --check frontend/app.js
+          node --check frontend/scouting-workspace.js
+          node --check frontend/tactical-board.js
+          node --check frontend/tactical-renderer.js
+
+      - name: Test scouting workspace contract
+        run: node --test frontend/tests/scouting-workspace.test.js

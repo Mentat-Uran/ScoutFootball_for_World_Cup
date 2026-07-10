@@ -62,6 +62,9 @@ def test_restored_workbenches_expose_filters_and_boundaries() -> None:
         "scout-status-filter",
         "scout-save-snapshot",
         "scout-export-csv",
+        "scout-export-workspace",
+        "scout-import-workspace",
+        "scout-workspace-dialog",
         "action-search",
         "action-competition-filter",
         "action-minutes-filter",
@@ -70,6 +73,18 @@ def test_restored_workbenches_expose_filters_and_boundaries() -> None:
 
     assert "StatsBomb Open Data" in html
     assert "450" in html
+
+
+def test_scouting_workspace_is_loaded_before_the_app_and_has_a_versioned_contract() -> None:
+    html = _read(FRONTEND / "index.html")
+    workspace_js = _read(FRONTEND / "scouting-workspace.js")
+
+    assert html.index('src="scouting-workspace.js"') < html.index('src="app.js"')
+    assert 'const VERSION = "1.1.0"' in workspace_js
+    assert "workspace_id" in workspace_js
+    assert "revision" in workspace_js
+    assert "analyzeConflict" in workspace_js
+    assert "mergeWorkspaces" in workspace_js
 
 
 def test_static_server_404_continues_to_mapped_json_fallback() -> None:

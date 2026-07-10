@@ -505,6 +505,49 @@ Match prediction model metadata.
 
 ---
 
+## 9.6 Browser-local Scouting Workspace
+
+**Schema**: `scoutfootball.scouting-workspace`
+
+**Current version**: `1.1.0`
+
+**Implementation**: `frontend/scouting-workspace.js`
+
+The workspace is an explicit backup and transfer format for browser-local scouting decisions. It does not change the read-only API boundary and is not a server audit log.
+
+```json
+{
+  "schema": "scoutfootball.scouting-workspace",
+  "version": "1.1.0",
+  "exported_at": "2026-07-10T12:00:00.000Z",
+  "audit": {
+    "workspace_id": "uuid-or-local-id",
+    "created_at": "ISO-8601",
+    "updated_at": "ISO-8601",
+    "revision": 3,
+    "device_scope": "browser-local",
+    "last_action": "local-edit|manual-export|import-merge|import-replace",
+    "app_version": "1.0.2",
+    "imported_from": "optional-workspace-id"
+  },
+  "source": {
+    "rating_snapshot_ids": ["snapshot-id"],
+    "attribution": "ScoutFootball local scouting decisions; server queues remain read-only"
+  },
+  "review": {
+    "statuses": { "player-key": "pending|reviewing|approved|rejected" },
+    "shortlist_notes": { "player-key": "note" },
+    "watchlist_notes": { "player-key": "note" }
+  },
+  "selections": { "watchlist": [], "shortlist": [] },
+  "watchlist_snapshot": { "player_keys": [], "saved_at": "ISO-8601|null" }
+}
+```
+
+Imports are limited to 1 MB, 1,000 status/note entries and 500 selected players. Unknown statuses, forbidden object keys, oversized strings and unsupported major versions are rejected or sanitized. Safe merge unions selections and uses the workspace with the newer audit timestamp for conflicting status/note keys; explicit replacement is the only overwrite path.
+
+---
+
 ## 10. Cross-Provider Schema Reference
 
 ### 10.1 SPADL / atomic-SPADL Compatibility

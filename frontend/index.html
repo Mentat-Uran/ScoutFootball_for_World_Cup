@@ -382,8 +382,12 @@
                     </select>
                     <button class="text-button" id="scout-save-snapshot" type="button">◇ <span data-i18n="snapshot">快照</span></button>
                     <button class="text-button" id="scout-export-csv" type="button">↧ <span data-i18n="export_csv">导出 CSV</span></button>
+                    <button class="text-button" id="scout-export-workspace" type="button">▣ <span data-i18n="scout_workspace_export">导出工作区</span></button>
+                    <button class="text-button" id="scout-import-workspace" type="button">↥ <span data-i18n="scout_workspace_import">导入工作区</span></button>
+                    <input id="scout-workspace-file" type="file" accept="application/json,.json" hidden>
                     <span class="toolbar-status" id="scout-snapshot-status" aria-live="polite"></span>
                 </div>
+                <div class="workspace-status-rail" id="scout-workspace-status" aria-live="polite"></div>
                 <div class="layout-2">
                     <article class="liquid-panel table-panel">
                         <div class="panel-head">
@@ -407,6 +411,22 @@
                         <div id="player-tactical-role" style="padding:0.4rem 0.8rem"></div>
                     </article>
                 </div>
+                <dialog class="workspace-dialog" id="scout-workspace-dialog" aria-labelledby="scout-workspace-dialog-title">
+                    <div class="workspace-dialog-shell">
+                        <div class="workspace-dialog-head">
+                            <div>
+                                <p class="eyebrow" data-i18n="scout_workspace_preview_kicker">安全导入</p>
+                                <h3 id="scout-workspace-dialog-title" data-i18n="scout_workspace_preview_title">球探工作区预览</h3>
+                            </div>
+                            <button class="icon-button workspace-dialog-close" id="scout-workspace-cancel" type="button" aria-label="Close">×</button>
+                        </div>
+                        <div id="scout-workspace-preview"></div>
+                        <div class="workspace-dialog-actions">
+                            <button class="text-button" id="scout-workspace-merge" type="button" data-i18n="scout_workspace_merge">安全合并</button>
+                            <button class="text-button danger-outline" id="scout-workspace-replace" type="button" data-i18n="scout_workspace_replace">替换本地</button>
+                        </div>
+                    </div>
+                </dialog>
             </section>
 
             <section class="view" id="view-actions" aria-label="actions">
@@ -1099,6 +1119,7 @@
 
     <script src="tactical-board.js"></script>
     <script src="tactical-renderer.js"></script>
+    <script src="scouting-workspace.js"></script>
     <script src="config.js"></script>
     <script src="app.js"></script>
 </body>

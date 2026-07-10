@@ -58,6 +58,12 @@ const i18n = {
         scouting_search: "搜索球员、球队或原因",
         scouting_status_all: "全部状态",
         scouting_local_state: "本地状态",
+        scout_workspace_export: "导出工作区",
+        scout_workspace_import: "导入工作区",
+        scout_workspace_preview_kicker: "安全导入",
+        scout_workspace_preview_title: "球探工作区预览",
+        scout_workspace_merge: "安全合并",
+        scout_workspace_replace: "替换本地",
         action_kicker: "StatsBomb 样本",
         action_title: "动作价值研究台",
         action_boundary: "仅表示当前 StatsBomb Open Data 覆盖样本；默认过滤低于 450 分钟的极小样本。",
@@ -263,6 +269,12 @@ const i18n = {
         scouting_search: "Search player, team, or reason",
         scouting_status_all: "All statuses",
         scouting_local_state: "Local state",
+        scout_workspace_export: "Export workspace",
+        scout_workspace_import: "Import workspace",
+        scout_workspace_preview_kicker: "Safe import",
+        scout_workspace_preview_title: "Scouting workspace preview",
+        scout_workspace_merge: "Safe merge",
+        scout_workspace_replace: "Replace local",
         action_kicker: "StatsBomb sample",
         action_title: "Action-value research desk",
         action_boundary: "Current StatsBomb Open Data coverage only; samples below 450 estimated minutes are filtered by default.",
@@ -2255,6 +2267,7 @@ function renderScouting() {
     }).join("") : '<div style="color:var(--text-muted);text-align:center;padding:1rem">No players in shortlist</div>';
 
     updateSnapshotStatus();
+    renderScoutingWorkspaceStatus();
 }
 
 function queueStatusKey(player) {
@@ -4305,6 +4318,40 @@ function bindEvents() {
     const scoutExportButton = document.getElementById("scout-export-csv");
     if (scoutExportButton) scoutExportButton.addEventListener("click", exportReviewQueueCSV);
 
+    const scoutWorkspaceExportButton = document.getElementById("scout-export-workspace");
+    if (scoutWorkspaceExportButton) {
+        scoutWorkspaceExportButton.addEventListener("click", exportScoutingWorkspace);
+    }
+    const scoutWorkspaceImportButton = document.getElementById("scout-import-workspace");
+    const scoutWorkspaceFile = document.getElementById("scout-workspace-file");
+    if (scoutWorkspaceImportButton && scoutWorkspaceFile) {
+        scoutWorkspaceImportButton.addEventListener("click", () => scoutWorkspaceFile.click());
+        scoutWorkspaceFile.addEventListener("change", async () => {
+            const [file] = scoutWorkspaceFile.files || [];
+            scoutWorkspaceFile.value = "";
+            if (file) await previewScoutingWorkspaceImport(file);
+        });
+    }
+    const scoutWorkspaceDialog = document.getElementById("scout-workspace-dialog");
+    const scoutWorkspaceCancel = document.getElementById("scout-workspace-cancel");
+    const scoutWorkspaceMerge = document.getElementById("scout-workspace-merge");
+    const scoutWorkspaceReplace = document.getElementById("scout-workspace-replace");
+    if (scoutWorkspaceCancel && scoutWorkspaceDialog) {
+        scoutWorkspaceCancel.addEventListener("click", () => {
+            pendingScoutingWorkspaceImport = null;
+            scoutWorkspaceDialog.close();
+        });
+        scoutWorkspaceDialog.addEventListener("close", () => {
+            pendingScoutingWorkspaceImport = null;
+        });
+    }
+    if (scoutWorkspaceMerge) {
+        scoutWorkspaceMerge.addEventListener("click", () => applyScoutingWorkspaceImport("merge"));
+    }
+    if (scoutWorkspaceReplace) {
+        scoutWorkspaceReplace.addEventListener("click", () => applyScoutingWorkspaceImport("replace"));
+    }
+
     // Scouting: note input change
     document.addEventListener("change", (e) => {
         if (e.target.matches(".scout-note-textarea") && e.target.dataset.notePlayer) {
@@ -5554,6 +5601,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     setView("overview");
 
     // Load scouting localStorage state
+    ensureScoutingWorkspaceMeta();
     loadScoutQueueStatuses();
     loadScoutShortlistNotes();
     loadWatchlistNotes();
@@ -5701,6 +5749,7 @@ const SCOUT_QUEUE_KEY = "scout-queue-statuses";
 const SCOUT_NOTES_KEY = "scout-shortlist-notes";
 const SCOUT_LASTVISIT_KEY = "scout-watchlist-lastvisit";
 const SCOUT_SNAPSHOT_KEY = "scout-watchlist-snapshot";
+const SCOUT_WORKSPACE_META_KEY = "sf-scouting-workspace-meta";
 const WATCHLIST_NOTES_KEY = "sf-watchlist-notes";
 const PLAYER_WATCHLIST_KEY = "sf-player-watchlist";
 const PLAYER_SHORTLIST_KEY = "sf-player-shortlist";
@@ -5714,19 +5763,318 @@ let scoutSortMode = "priority";
 let watchlistDiffCount = 0;
 const SCOUT_PAGE_SIZE = 50;
 let scoutCurrentPage = 1;
+let pendingScoutingWorkspaceImport = null;
+let lastScoutingTouchAt = 0;
+
+function newScoutingWorkspaceId() {
+    if (globalThis.crypto && typeof globalThis.crypto.randomUUID === "function") {
+        return globalThis.crypto.randomUUID();
+    }
+    return `workspace-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function ensureScoutingWorkspaceMeta() {
+    const now = new Date().toISOString();
+    let stored = {};
+    try {
+        stored = JSON.parse(localStorage.getItem(SCOUT_WORKSPACE_META_KEY)) || {};
+    } catch {
+        stored = {};
+    }
+    const workspace = SCOUTING_WORKSPACE.createWorkspace({
+        workspace_id: stored.workspace_id || newScoutingWorkspaceId(),
+        created_at: stored.created_at || now,
+        updated_at: stored.updated_at || now,
+        exported_at: now,
+        revision: stored.revision || 1,
+        last_action: stored.last_action || "local-edit",
+        imported_from: stored.imported_from || "",
+        app_version: APP_VERSION,
+    });
+    const meta = workspace.audit;
+    try {
+        localStorage.setItem(SCOUT_WORKSPACE_META_KEY, JSON.stringify(meta));
+    } catch {}
+    return meta;
+}
+
+function touchScoutingWorkspace(lastAction = "local-edit") {
+    const current = ensureScoutingWorkspaceMeta();
+    const now = new Date().toISOString();
+    const nowMs = Date.now();
+    const coalescedEdit =
+        lastAction === "local-edit"
+        && lastScoutingTouchAt > 0
+        && nowMs - lastScoutingTouchAt < 750;
+    lastScoutingTouchAt = nowMs;
+    const next = SCOUTING_WORKSPACE.createWorkspace({
+        workspace_id: current.workspace_id,
+        created_at: current.created_at,
+        updated_at: now,
+        exported_at: now,
+        revision: current.revision + (coalescedEdit ? 0 : 1),
+        last_action: lastAction,
+        imported_from: current.imported_from,
+        app_version: APP_VERSION,
+    }).audit;
+    try {
+        localStorage.setItem(SCOUT_WORKSPACE_META_KEY, JSON.stringify(next));
+    } catch {}
+    renderScoutingWorkspaceStatus();
+    return next;
+}
+
+function currentSnapshotState() {
+    let playerKeys = [];
+    let savedAt = null;
+    try {
+        playerKeys = JSON.parse(localStorage.getItem(SCOUT_SNAPSHOT_KEY)) || [];
+        const timestamp = Number(localStorage.getItem(SCOUT_LASTVISIT_KEY) || 0);
+        savedAt = timestamp > 0 ? new Date(timestamp).toISOString() : null;
+    } catch {
+        playerKeys = [];
+    }
+    return { playerKeys, savedAt };
+}
+
+function buildCurrentScoutingWorkspace() {
+    const meta = ensureScoutingWorkspaceMeta();
+    const snapshot = currentSnapshotState();
+    const ratingSnapshotIds = reviewQueue
+        .map((player) => player.rating_snapshot_id)
+        .filter(Boolean);
+    return SCOUTING_WORKSPACE.createWorkspace({
+        workspace_id: meta.workspace_id,
+        created_at: meta.created_at,
+        updated_at: meta.updated_at,
+        exported_at: new Date().toISOString(),
+        revision: meta.revision,
+        last_action: meta.last_action,
+        imported_from: meta.imported_from,
+        app_version: APP_VERSION,
+        rating_snapshot_ids: ratingSnapshotIds,
+        review_statuses: scoutQueueStatuses,
+        shortlist_notes: scoutShortlistNotes,
+        watchlist_notes: watchlistNotes,
+        watchlist: getPlayerWatchlist(),
+        shortlist: getPlayerShortlist(),
+        snapshot_player_keys: snapshot.playerKeys,
+        snapshot_saved_at: snapshot.savedAt,
+    });
+}
+
+function renderScoutingWorkspaceStatus() {
+    const status = document.getElementById("scout-workspace-status");
+    if (!status || typeof SCOUTING_WORKSPACE === "undefined") return;
+    const workspace = buildCurrentScoutingWorkspace();
+    const summary = SCOUTING_WORKSPACE.summarizeWorkspace(workspace);
+    const locale = appState.lang === "zh" ? "zh-CN" : "en-US";
+    const updated = new Date(summary.updated_at).toLocaleString(locale);
+    const scope = appState.lang === "zh" ? "仅当前浏览器" : "this browser only";
+    const label = document.createElement("strong");
+    label.textContent = `Workspace v${SCOUTING_WORKSPACE.VERSION}`;
+    status.replaceChildren(
+        label,
+        document.createTextNode(
+            ` · rev ${summary.revision} · ${summary.decision_count} ${appState.lang === "zh" ? "项决策" : "decisions"} · ${updated} · ${scope}`,
+        ),
+    );
+}
+
+function setScoutingWorkspaceMessage(message, isError = false) {
+    const status = document.getElementById("scout-snapshot-status");
+    if (!status) return;
+    status.textContent = message;
+    status.style.color = isError ? "var(--bad)" : "var(--good)";
+    setTimeout(() => {
+        status.style.color = "";
+        updateSnapshotStatus();
+    }, 3500);
+}
+
+function workspaceErrorMessage(error) {
+    const code = String(error && error.message ? error.message : error);
+    const zh = appState.lang === "zh";
+    const messages = {
+        workspace_too_large: zh ? "工作区文件超过 1 MB 限制" : "Workspace exceeds the 1 MB limit",
+        workspace_json_invalid: zh ? "工作区不是有效 JSON" : "Workspace is not valid JSON",
+        workspace_not_object: zh ? "工作区根节点必须是对象" : "Workspace root must be an object",
+        workspace_schema_invalid: zh ? "工作区 schema 不匹配" : "Workspace schema does not match",
+        workspace_version_unsupported: zh ? "不支持该工作区版本" : "Workspace version is unsupported",
+    };
+    return messages[code] || (zh ? `导入失败：${code}` : `Import failed: ${code}`);
+}
+
+function exportScoutingWorkspace() {
+    if (typeof SCOUTING_WORKSPACE === "undefined") {
+        setScoutingWorkspaceMessage(
+            appState.lang === "zh" ? "工作区模块未加载" : "Workspace module is unavailable",
+            true,
+        );
+        return;
+    }
+    touchScoutingWorkspace("manual-export");
+    const workspace = buildCurrentScoutingWorkspace();
+    const blob = new Blob([SCOUTING_WORKSPACE.serializeWorkspace(workspace)], {
+        type: "application/json;charset=utf-8",
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+    link.href = url;
+    link.download = `scoutfootball-scouting-workspace-${stamp}.json`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+    setScoutingWorkspaceMessage(
+        appState.lang === "zh" ? "工作区已导出" : "Workspace exported",
+    );
+}
+
+function workspaceSummaryCard(title, summary) {
+    const locale = appState.lang === "zh" ? "zh-CN" : "en-US";
+    const updated = new Date(summary.updated_at).toLocaleString(locale);
+    return `<div class="workspace-preview-card">
+        <div><strong>${escapeHtml(title)}</strong><div class="rank-meta">rev ${summary.revision} · ${escapeHtml(updated)}</div></div>
+        <div class="workspace-preview-metrics">
+            <span><b>${summary.status_count}</b>${escapeHtml(appState.lang === "zh" ? "状态" : "statuses")}</span>
+            <span><b>${summary.note_count}</b>${escapeHtml(appState.lang === "zh" ? "备注" : "notes")}</span>
+            <span><b>${summary.watchlist_count + summary.shortlist_count}</b>${escapeHtml(appState.lang === "zh" ? "选择" : "selections")}</span>
+        </div>
+    </div>`;
+}
+
+async function previewScoutingWorkspaceImport(file) {
+    try {
+        if (file.size > SCOUTING_WORKSPACE.MAX_BYTES) throw new Error("workspace_too_large");
+        const incoming = SCOUTING_WORKSPACE.parseWorkspace(await file.text());
+        const local = buildCurrentScoutingWorkspace();
+        const analysis = SCOUTING_WORKSPACE.analyzeConflict(local, incoming);
+        pendingScoutingWorkspaceImport = { incoming, local, analysis };
+        const preview = document.getElementById("scout-workspace-preview");
+        const dialog = document.getElementById("scout-workspace-dialog");
+        if (!preview || !dialog) throw new Error("workspace_dialog_unavailable");
+        const conflictText = analysis.total_conflicts > 0
+            ? (appState.lang === "zh"
+                ? `检测到 ${analysis.status_conflicts} 个状态冲突和 ${analysis.note_conflicts} 个备注冲突。安全合并会保留两边条目，并以更新时间较新的工作区解决同键冲突。`
+                : `Found ${analysis.status_conflicts} status conflicts and ${analysis.note_conflicts} note conflicts. Safe merge keeps entries from both sides and uses the newer workspace for same-key conflicts.`)
+            : (appState.lang === "zh"
+                ? "未检测到同键冲突。仍会先预览，不会自动覆盖当前浏览器状态。"
+                : "No same-key conflicts detected. The import is still previewed and never overwrites browser state automatically.");
+        preview.innerHTML = `<div class="workspace-preview-grid">
+            ${workspaceSummaryCard(appState.lang === "zh" ? "当前浏览器" : "Current browser", analysis.local)}
+            ${workspaceSummaryCard(file.name || (appState.lang === "zh" ? "导入文件" : "Import file"), analysis.incoming)}
+        </div><p class="workspace-conflict-note">${escapeHtml(conflictText)}</p>`;
+        if (typeof dialog.showModal === "function") dialog.showModal();
+        else dialog.setAttribute("open", "");
+    } catch (error) {
+        pendingScoutingWorkspaceImport = null;
+        setScoutingWorkspaceMessage(workspaceErrorMessage(error), true);
+    }
+}
+
+function replaceWorkspaceAudit(incoming) {
+    const state = SCOUTING_WORKSPACE.toLocalState(incoming);
+    const now = new Date().toISOString();
+    return SCOUTING_WORKSPACE.createWorkspace({
+        workspace_id: state.audit.workspace_id,
+        created_at: state.audit.created_at,
+        updated_at: now,
+        exported_at: now,
+        revision: state.audit.revision + 1,
+        last_action: "import-replace",
+        imported_from: state.audit.workspace_id,
+        app_version: APP_VERSION,
+        rating_snapshot_ids: incoming.source.rating_snapshot_ids,
+        review_statuses: state.review_statuses,
+        shortlist_notes: state.shortlist_notes,
+        watchlist_notes: state.watchlist_notes,
+        watchlist: state.watchlist,
+        shortlist: state.shortlist,
+        snapshot_player_keys: state.snapshot_player_keys,
+        snapshot_saved_at: state.snapshot_saved_at,
+    });
+}
+
+function persistScoutingWorkspace(workspace) {
+    const state = SCOUTING_WORKSPACE.toLocalState(workspace);
+    const keys = [
+        SCOUT_QUEUE_KEY,
+        SCOUT_NOTES_KEY,
+        WATCHLIST_NOTES_KEY,
+        PLAYER_WATCHLIST_KEY,
+        PLAYER_SHORTLIST_KEY,
+        SCOUT_SNAPSHOT_KEY,
+        SCOUT_LASTVISIT_KEY,
+        SCOUT_WORKSPACE_META_KEY,
+    ];
+    const backup = new Map(keys.map((key) => [key, localStorage.getItem(key)]));
+    try {
+        localStorage.setItem(SCOUT_QUEUE_KEY, JSON.stringify(state.review_statuses));
+        localStorage.setItem(SCOUT_NOTES_KEY, JSON.stringify(state.shortlist_notes));
+        localStorage.setItem(WATCHLIST_NOTES_KEY, JSON.stringify(state.watchlist_notes));
+        localStorage.setItem(PLAYER_WATCHLIST_KEY, JSON.stringify(state.watchlist));
+        localStorage.setItem(PLAYER_SHORTLIST_KEY, JSON.stringify(state.shortlist));
+        localStorage.setItem(SCOUT_SNAPSHOT_KEY, JSON.stringify(state.snapshot_player_keys));
+        const savedAt = Date.parse(state.snapshot_saved_at);
+        if (Number.isFinite(savedAt)) localStorage.setItem(SCOUT_LASTVISIT_KEY, String(savedAt));
+        else localStorage.removeItem(SCOUT_LASTVISIT_KEY);
+        localStorage.setItem(SCOUT_WORKSPACE_META_KEY, JSON.stringify(state.audit));
+    } catch (error) {
+        for (const [key, value] of backup) {
+            if (value === null) localStorage.removeItem(key);
+            else localStorage.setItem(key, value);
+        }
+        throw error;
+    }
+    loadScoutQueueStatuses();
+    loadScoutShortlistNotes();
+    loadWatchlistNotes();
+    lastScoutingTouchAt = 0;
+}
+
+function applyScoutingWorkspaceImport(mode) {
+    if (!pendingScoutingWorkspaceImport) return;
+    const { local, incoming } = pendingScoutingWorkspaceImport;
+    try {
+        const result = mode === "replace"
+            ? replaceWorkspaceAudit(incoming)
+            : SCOUTING_WORKSPACE.mergeWorkspaces(local, incoming);
+        persistScoutingWorkspace(result);
+        pendingScoutingWorkspaceImport = null;
+        const dialog = document.getElementById("scout-workspace-dialog");
+        if (dialog) dialog.close();
+        scoutCurrentPage = 1;
+        renderScouting();
+        setScoutingWorkspaceMessage(
+            appState.lang === "zh"
+                ? (mode === "replace" ? "已替换本地工作区" : "工作区已安全合并")
+                : (mode === "replace" ? "Local workspace replaced" : "Workspace safely merged"),
+        );
+    } catch (error) {
+        setScoutingWorkspaceMessage(workspaceErrorMessage(error), true);
+    }
+}
 
 /* ── Player Watchlist / Shortlist (localStorage) ─────────────────── */
 function getPlayerWatchlist() {
     try { return JSON.parse(localStorage.getItem(PLAYER_WATCHLIST_KEY)) || []; } catch { return []; }
 }
 function savePlayerWatchlist(list) {
-    try { localStorage.setItem(PLAYER_WATCHLIST_KEY, JSON.stringify(list)); } catch {}
+    try {
+        localStorage.setItem(PLAYER_WATCHLIST_KEY, JSON.stringify(list));
+        touchScoutingWorkspace();
+    } catch {}
 }
 function getPlayerShortlist() {
     try { return JSON.parse(localStorage.getItem(PLAYER_SHORTLIST_KEY)) || []; } catch { return []; }
 }
 function savePlayerShortlist(list) {
-    try { localStorage.setItem(PLAYER_SHORTLIST_KEY, JSON.stringify(list)); } catch {}
+    try {
+        localStorage.setItem(PLAYER_SHORTLIST_KEY, JSON.stringify(list));
+        touchScoutingWorkspace();
+    } catch {}
 }
 function isInPlayerWatchlist(playerKey) {
     return getPlayerWatchlist().some((p) => p.key === playerKey);
@@ -5786,7 +6134,10 @@ function loadScoutQueueStatuses() {
 }
 
 function saveScoutQueueStatuses() {
-    try { localStorage.setItem(SCOUT_QUEUE_KEY, JSON.stringify(scoutQueueStatuses)); } catch {}
+    try {
+        localStorage.setItem(SCOUT_QUEUE_KEY, JSON.stringify(scoutQueueStatuses));
+        touchScoutingWorkspace();
+    } catch {}
 }
 
 function loadScoutShortlistNotes() {
@@ -5794,14 +6145,20 @@ function loadScoutShortlistNotes() {
 }
 
 function saveScoutShortlistNotes() {
-    try { localStorage.setItem(SCOUT_NOTES_KEY, JSON.stringify(scoutShortlistNotes)); } catch {}
+    try {
+        localStorage.setItem(SCOUT_NOTES_KEY, JSON.stringify(scoutShortlistNotes));
+        touchScoutingWorkspace();
+    } catch {}
 }
 function loadWatchlistNotes() {
     try { watchlistNotes = JSON.parse(localStorage.getItem(WATCHLIST_NOTES_KEY)) || {}; } catch { watchlistNotes = {}; }
 }
 
 function saveWatchlistNotes() {
-    try { localStorage.setItem(WATCHLIST_NOTES_KEY, JSON.stringify(watchlistNotes)); } catch {}
+    try {
+        localStorage.setItem(WATCHLIST_NOTES_KEY, JSON.stringify(watchlistNotes));
+        touchScoutingWorkspace();
+    } catch {}
 }
 
 function generateTacticalRole(player) {
@@ -5855,6 +6212,7 @@ function saveWatchlistSnapshot(currentPlayers) {
         const keys = currentPlayers.map(p => p.player_name || p.name);
         localStorage.setItem(SCOUT_SNAPSHOT_KEY, JSON.stringify(keys));
         localStorage.setItem(SCOUT_LASTVISIT_KEY, String(Date.now()));
+        touchScoutingWorkspace();
     } catch {}
 }
 

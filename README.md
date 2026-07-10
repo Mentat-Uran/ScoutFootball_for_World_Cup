@@ -35,7 +35,7 @@ The focus right now: upgrading the rating system into an interpretable, evaluabl
 - **Neural Rating Candidate:** `scoutfootball train-rating-nn` trains a supervised sklearn MLP candidate from `rating_feature_matrix.parquet` + `player_truth_labels.parquet` and writes artifacts to `data/models/player_rating_nn/`; it does not replace `player_ratings_optimized.parquet` unless it beats the current optimizer on the same holdout and baseline checks.
 - **Model Evaluation & Cards:** Data sources, label definitions, bounds, and known biases documented in `docs/MODEL_CARD.md`.
 - **Match Prediction:** Independent Poisson baseline with score probability matrices.
-- **Product & Visuals:** 15-page Streamlit console with artifact overview, scouting queue, and action-value sample pages. Liquid Glass static frontend with 7 analysis views (Overview, Players, Value, Matches, Scouting, Action Values, Reports), 4 World Cup views (Schedule, Squads, Compare, Probability), and a first-slice local tactical board. FastAPI read-only backend serves artifacts, player profiles, rating snapshots, predictions, review queue, watchlist, shortlist, action-value samples, and model runs. `mplsoccer` powers pitch plots, pizza charts, and shot maps. Frontend rendering now escapes API/local JSON strings, CSV exports guard against spreadsheet formula injection, and tactical-board JSON imports pass through a schema sanitizer. API status pill distinguishes LIVE / STATIC / OFFLINE; review queue is paginated (50 per page); NaN/undefined values are guarded; static export no longer writes repr strings for dataclass/Pydantic responses.
+- **Product & Visuals:** 15-page Streamlit console with artifact overview, scouting queue, and action-value sample pages. Liquid Glass static frontend with 7 analysis views (Overview, Players, Value, Matches, Scouting, Action Values, Reports), 4 World Cup views (Schedule, Squads, Compare, Probability), and a first-slice local tactical board. FastAPI read-only backend serves artifacts, player profiles, rating snapshots, predictions, review queue, watchlist, shortlist, action-value samples, and model runs. `mplsoccer` powers pitch plots, pizza charts, and shot maps. The scouting desk exports and imports a versioned browser-local workspace with revision/timestamp audit fields, import previews, conflict detection, safe merge, and explicit replacement. Frontend rendering escapes API/local JSON strings, CSV exports guard against spreadsheet formula injection, and tactical-board JSON imports pass through a schema sanitizer. API status pill distinguishes LIVE / STATIC / OFFLINE; review queue is paginated (50 per page); NaN/undefined values are guarded; static export no longer writes repr strings for dataclass/Pydantic responses.
 
 ### Liquid Glass Frontend
 
@@ -49,7 +49,7 @@ The `frontend/` directory contains a static analysis workbench with a consistent
 | **Players** (◇) | Player pool, radar charts, position percentiles | `/ratings`, `/players/{name}` API |
 | **Value** (€) | Value deviation scatter, over/under-valued rankings | `/value-summary` API |
 | **Matches** (△) | Match prediction, score probability matrix | `/predictions/{home}/{away}` API |
-| **Scouting** (□) | Review queue filters, local status/notes, watchlist snapshots, CSV export | `/review-queue`, `/watchlist`, `/shortlist` API |
+| **Scouting** (□) | Review queue filters, local status/notes, watchlist snapshots, CSV plus versioned workspace import/export | `/review-queue`, `/watchlist`, `/shortlist` API + browser-local workspace JSON |
 | **Actions** (⌁) | xT/VAEP ranking, sample filters, tactical heatmap handoff | `/action-values` API |
 | **Reports** (▣) | Model runs, backend contracts, metrics | `/reports/model-runs` API |
 
@@ -209,7 +209,7 @@ PYTHONPATH=src uv run python -m scoutfootball train-rating-nn
 - Frontend falls back to a tracked static snapshot when mapped API routes are unavailable; it is cached data, not live data
 - API status pill shows LIVE (API online), STATIC (fallback from snapshot), or OFFLINE (neither available)
 - Review queue is paginated at 50 items per page to avoid rendering thousands of cards at once
-- Scouting review states and notes are browser-local and are not yet a versioned audit workspace
+- Scouting review states and notes remain browser-local, but they can be moved or backed up with the versioned workspace JSON. Audit metadata records local revisions and timestamps; it is not a server-side identity or cross-device audit service.
 - Some VAEP rows only have `player_id`; identity mapping remains incomplete
 - Tactical board MP4 export requires ffmpeg installed on the system
 
