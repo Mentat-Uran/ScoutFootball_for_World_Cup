@@ -10,7 +10,6 @@ from scoutfootball.api import (
     get_team_strength,
 )
 
-
 # ── _broad_position ────────────────────────────────────────────────
 
 
