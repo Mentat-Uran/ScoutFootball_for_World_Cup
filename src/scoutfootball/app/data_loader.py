@@ -2,14 +2,65 @@
 from __future__ import annotations
 
 import logging
+import os
+import time
 from functools import lru_cache
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 
 from scoutfootball.config import PlatformSettings
 
 logger = logging.getLogger(__name__)
+
+
+# ── TTL cache infrastructure ──────────────────────────────────────
+_MISSING = object()
+
+
+class _TTLCache:
+    """Simple TTL cache with force_refresh support.
+
+    Stores values with timestamps and expires them after
+    SCOUTFOOTBALL_CACHE_TTL_SECONDS (default 300s). No external deps.
+    """
+
+    _DEFAULT_TTL = 300.0
+
+    def __init__(self) -> None:
+        self._ttl = self._read_ttl()
+        self._store: dict[Any, tuple[Any, float]] = {}
+
+    @staticmethod
+    def _read_ttl() -> float:
+        raw = os.environ.get("SCOUTFOOTBALL_CACHE_TTL_SECONDS")
+        if not raw:
+            return _TTLCache._DEFAULT_TTL
+        try:
+            val = float(raw)
+            return val if val > 0 else _TTLCache._DEFAULT_TTL
+        except (TypeError, ValueError):
+            return _TTLCache._DEFAULT_TTL
+
+    def get(self, key: Any) -> Any:
+        """Return cached value if fresh, else ``_MISSING``."""
+        entry = self._store.get(key)
+        if entry is None:
+            return _MISSING
+        value, ts = entry
+        if time.time() - ts > self._ttl:
+            return _MISSING
+        return value
+
+    def set(self, key: Any, value: Any) -> None:
+        self._store[key] = (value, time.time())
+
+    def invalidate(self, key: Any) -> None:
+        self._store.pop(key, None)
+
+
+_ttl_cache = _TTLCache()
 
 
 @lru_cache(maxsize=1)
@@ -100,9 +151,17 @@ def _normalize_ratings_frame(df: pd.DataFrame) -> pd.DataFrame:
     return result
 
 
-@lru_cache(maxsize=1)
-def _load_all_player_ratings() -> pd.DataFrame:
-    """Load all player ratings into memory (cached)."""
+def _load_all_player_ratings(force_refresh: bool = False) -> pd.DataFrame:
+    """Load all player ratings into memory (cached with TTL).
+
+    Pass ``force_refresh=True`` to bypass the cache (e.g. after model retraining).
+    """
+    cache_key = "_load_all_player_ratings"
+    if not force_refresh:
+        cached = _ttl_cache.get(cache_key)
+        if cached is not _MISSING:
+            return cached
+
     if _duckdb_exists():
         try:
             import duckdb
@@ -112,7 +171,9 @@ def _load_all_player_ratings() -> pd.DataFrame:
                 df = con.execute(
                     "SELECT * FROM player_ratings ORDER BY optimized_score DESC"
                 ).fetchdf()
-                return _normalize_ratings_frame(df)
+                result = _normalize_ratings_frame(df)
+                _ttl_cache.set(cache_key, result)
+                return result
             finally:
                 con.close()
         except Exception:
@@ -123,7 +184,9 @@ def _load_all_player_ratings() -> pd.DataFrame:
     df = _safe_read_parquet(rel)
     if df is not None:
         df = _normalize_ratings_frame(df)
-        return df.sort_values("optimized_score", ascending=False).reset_index(drop=True)
+        result = df.sort_values("optimized_score", ascending=False).reset_index(drop=True)
+        _ttl_cache.set(cache_key, result)
+        return result
 
     logger.warning("No ratings data found — falling back to synthetic demo data")
     from scoutfootball.app.demo_data import generate_player_match
@@ -132,7 +195,9 @@ def _load_all_player_ratings() -> pd.DataFrame:
     demo["optimized_score"] = demo.get("rating", 0.5)
     demo["position_group"] = demo.get("position", "MF")
     demo["confidence_level"] = "MEDIUM"
-    return _mark_synthetic(_normalize_ratings_frame(demo))
+    result = _mark_synthetic(_normalize_ratings_frame(demo))
+    _ttl_cache.set(cache_key, result)
+    return result
 
 
 def load_player_ratings(
@@ -141,12 +206,14 @@ def load_player_ratings(
     team: str | None = None,
     season: str | None = None,
     min_score: float | None = None,
+    force_refresh: bool = False,
 ) -> pd.DataFrame:
     """Load player ratings from DuckDB or Parquet, with optional filters.
 
     Falls back to player_ratings_optimized.parquet, then demo data.
+    Pass ``force_refresh=True`` to bypass the cache (e.g. after model retraining).
     """
-    df = _load_all_player_ratings()
+    df = _load_all_player_ratings(force_refresh=force_refresh)
     if position and "position_group" in df.columns:
         df = df[df["position_group"] == position]
     if league and "league" in df.columns:
@@ -160,16 +227,26 @@ def load_player_ratings(
     return df.reset_index(drop=True)
 
 
-@lru_cache(maxsize=2)
-def load_model_meta() -> pd.DataFrame:
-    """Load model metadata from DuckDB or JSON."""
+def load_model_meta(force_refresh: bool = False) -> pd.DataFrame:
+    """Load model metadata from DuckDB or JSON (cached with TTL).
+
+    Pass ``force_refresh=True`` to bypass the cache (e.g. after model retraining).
+    """
+    cache_key = "load_model_meta"
+    if not force_refresh:
+        cached = _ttl_cache.get(cache_key)
+        if cached is not _MISSING:
+            return cached
+
     if _duckdb_exists():
         try:
             import duckdb
 
             con = duckdb.connect(str(_duckdb_path()), read_only=True)
             try:
-                return con.execute("SELECT * FROM model_meta").fetchdf()
+                result = con.execute("SELECT * FROM model_meta").fetchdf()
+                _ttl_cache.set(cache_key, result)
+                return result
             finally:
                 con.close()
         except Exception:
@@ -183,7 +260,7 @@ def load_model_meta() -> pd.DataFrame:
         with open(json_path) as f:
             meta = json.load(f)
         holdout = meta.get("holdout", {}).get("optimized_test", {})
-        return pd.DataFrame([{
+        result = pd.DataFrame([{
             "run_id": meta.get("timestamp", "unknown"),
             "timestamp": meta.get("timestamp", ""),
             "n_params": meta.get("n_params", 0),
@@ -191,20 +268,34 @@ def load_model_meta() -> pd.DataFrame:
             "pearson": holdout.get("pearson", 0),
             "overfit_gap": meta.get("holdout", {}).get("overfit_rank_loss_gap", 0),
         }])
+        _ttl_cache.set(cache_key, result)
+        return result
 
-    return pd.DataFrame()
+    result = pd.DataFrame()
+    _ttl_cache.set(cache_key, result)
+    return result
 
 
-@lru_cache(maxsize=2)
-def load_league_metrics() -> pd.DataFrame:
-    """Load league metrics from DuckDB or Parquet."""
+def load_league_metrics(force_refresh: bool = False) -> pd.DataFrame:
+    """Load league metrics from DuckDB or Parquet (cached with TTL).
+
+    Pass ``force_refresh=True`` to bypass the cache (e.g. after model retraining).
+    """
+    cache_key = "load_league_metrics"
+    if not force_refresh:
+        cached = _ttl_cache.get(cache_key)
+        if cached is not _MISSING:
+            return cached
+
     if _duckdb_exists():
         try:
             import duckdb
 
             con = duckdb.connect(str(_duckdb_path()), read_only=True)
             try:
-                return con.execute("SELECT * FROM league_metrics").fetchdf()
+                result = con.execute("SELECT * FROM league_metrics").fetchdf()
+                _ttl_cache.set(cache_key, result)
+                return result
             finally:
                 con.close()
         except Exception:
@@ -213,9 +304,12 @@ def load_league_metrics() -> pd.DataFrame:
     rel = "gold/feature_store/rating_league_metrics.parquet"
     df = _safe_read_parquet(rel)
     if df is not None:
+        _ttl_cache.set(cache_key, df)
         return df
 
-    return pd.DataFrame()
+    result = pd.DataFrame()
+    _ttl_cache.set(cache_key, result)
+    return result
 
 
 def load_player_match() -> pd.DataFrame:
@@ -270,10 +364,21 @@ def load_oof_predictions() -> pd.DataFrame:
     return _mark_synthetic(generate_oof_predictions())
 
 
-@lru_cache(maxsize=2)
-def load_player_value_metrics() -> pd.DataFrame:
+def load_player_value_metrics(force_refresh: bool = False) -> pd.DataFrame:
+    """Load player value metrics from Parquet (cached with TTL).
+
+    Pass ``force_refresh=True`` to bypass the cache (e.g. after model retraining).
+    """
+    cache_key = "load_player_value_metrics"
+    if not force_refresh:
+        cached = _ttl_cache.get(cache_key)
+        if cached is not _MISSING:
+            return cached
+
     df = _safe_read_parquet("gold/feature_store/player_value_metrics.parquet")
-    return df if df is not None else pd.DataFrame()
+    result = df if df is not None else pd.DataFrame()
+    _ttl_cache.set(cache_key, result)
+    return result
 
 
 def load_score_prediction(home_team: str | None = None, away_team: str | None = None):

@@ -81,6 +81,10 @@ ScoutFootball 的长期形态是本地优先的足球数据研究平台，而不
 
 ## 已完成
 
+- [x] **搜索建议端点**（2026-07-10）：新增 `GET /search?q=&type=&limit=` 端点，前缀优先+子串回退匹配球员和球队，支持 type 过滤和 limit 上限 25。前端新增 SearchTypeahead 组件，接入球员搜索、球员对比、球队对比共 5 个输入框，支持键盘导航和防抖。
+- [x] **TTL 缓存迁移**（2026-07-10）：将 `_load_all_player_ratings`、`load_model_meta`、`load_league_metrics`、`load_player_value_metrics` 和 `_wc_cache` 从永久 lru_cache 迁移到 TTL 缓存（默认 300 秒，可通过 `SCOUTFOOTBALL_CACHE_TTL_SECONDS` 环境变量配置），支持 `force_refresh` 参数，修复模型重训后 API 返回过期数据的问题。
+- [x] **静态对比 fallback 数据**（2026-07-10）：扩展 `scripts/export_static_frontend_data.py` 新增 `compare` 导出段，生成 `player_compare_pairs.json` 和 `team_compare_pairs.json`；前端静态回退映射支持 compare 端点的离线 pair 查找。
+- [x] **CI 修复**（2026-07-10）：ci.yml 增加 `frontend/action-value-explorer.js` 语法检查，测试 glob 改为 `frontend/tests/*.test.js`。
 - [x] **球队实力分析面板**（2026-07-10）：新增 `GET /teams/strength` API，按分钟加权聚合球员评分到球队级别，返回整体评分、位置组（GK/DEF/MID/ATT）实力分布、核心球员和置信度分布；新增前端"球队"视图含排名表、球队详情卡和位置组对比堆叠柱状图；静态导出脚本同步生成 `team_strength.json`。
 - [x] **修复 scouting queue 重复计算**（2026-07-10）：`get_review_queue`/`get_watchlist`/`get_shortlist` 原各自独立调用 `build_scouting_queues`，现通过 `_get_scouting_queues()` 缓存复用。
 - [x] **修复 api_server.py Path 导入位置**（2026-07-10）：`Path` 原在文件底部局部导入但被上部代码使用，现移至文件顶部。

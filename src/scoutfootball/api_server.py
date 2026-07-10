@@ -41,6 +41,7 @@ from scoutfootball.api import (
     health_check,
     list_players,
     list_teams,
+    search_players_and_teams,
 )
 
 _DEFAULT_CORS_ORIGINS = [
@@ -126,6 +127,10 @@ def create_app() -> FastAPI:
     @app.get("/players")
     def players():
         return list_players()
+
+    @app.get("/search")
+    def search_suggestions(q: str = "", type: str = "all", limit: int = 10):
+        return search_players_and_teams(q, type, limit)
 
     @app.get("/teams")
     def teams_list():

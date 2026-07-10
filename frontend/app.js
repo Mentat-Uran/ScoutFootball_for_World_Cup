@@ -521,13 +521,16 @@ function _teamSlug(name) {
 // Map an API path to a local static JSON file URL.
 // Returns null if no static equivalent exists.
 function _staticUrlFor(apiPath) {
-    const m = (apiPath || "").replace(/^\/+/, "/");
+    // Strip query string — compare endpoints use ?a=..&b=.. but the static
+    // file is a pairs list that must be searched client-side.
+    const pathOnly = (apiPath || "").split("?")[0];
+    const m = pathOnly.replace(/^\/+/, "/");
     const map = {
         "/health": "/data/health.json",
         "/artifacts": "/data/artifacts.json",
         "/teams": "/data/teams.json",
         "/teams/strength": "/data/team_strength.json",
-        "/teams/compare": null,
+        "/teams/compare": "/data/team_compare_pairs.json",
         "/ratings": "/data/ratings.json",
         "/ratings/meta": "/data/ratings_meta.json",
         "/ratings/snapshots": "/data/ratings.json",
@@ -542,6 +545,7 @@ function _staticUrlFor(apiPath) {
         "/reports/model-runs": "/data/model_runs.json",
         "/license": "/data/artifacts.json",
         "/players": "/data/players_list.json",
+        "/players/compare": "/data/player_compare_pairs.json",
         "/worldcup/teams": "/data/worldcup/teams.json",
         "/world-cup/groups": "/data/worldcup/groups.json",
         "/world-cup/schedule": "/data/worldcup/schedule.json",
@@ -892,6 +896,167 @@ function safeNum(value, decimals) {
     const n = Number(value);
     if (!Number.isFinite(n)) return "–";
     return n.toFixed(decimals != null ? decimals : 1);
+}
+
+// SearchTypeahead: lightweight typeahead component for player/team search.
+// Takes an input element (or ID), a type ("players", "teams", or "all"),
+// and an optional onSelect callback. Silently degrades on API failure.
+function SearchTypeahead(inputEl, type, onSelect) {
+    const input = typeof inputEl === "string" ? document.getElementById(inputEl) : inputEl;
+    if (!input) return null;
+    if (input.dataset.typeaheadBound) return null;
+    input.dataset.typeaheadBound = "1";
+
+    type = type || "all";
+    const wrapper = input.parentElement;
+    if (wrapper && getComputedStyle(wrapper).position === "static") {
+        wrapper.style.position = "relative";
+    }
+
+    let debounceTimer = null;
+    let dropdown = null;
+    let items = [];
+    let activeIndex = -1;
+    let suppressInput = false;
+
+    function closeDropdown() {
+        if (dropdown) {
+            dropdown.remove();
+            dropdown = null;
+        }
+        activeIndex = -1;
+        items = [];
+    }
+
+    function buildItems(data) {
+        const all = [];
+        if (type === "players" || type === "all") {
+            (data.players || []).forEach(p => {
+                all.push({
+                    label: p.player_name || "",
+                    sub: [p.team, p.position].filter(Boolean).join(" · "),
+                    value: p.player_name || "",
+                    rating: p.rating,
+                });
+            });
+        }
+        if (type === "teams" || type === "all") {
+            (data.teams || []).forEach(t => {
+                all.push({
+                    label: t.team_name || "",
+                    sub: t.league || "",
+                    value: t.team_name || "",
+                });
+            });
+        }
+        return all;
+    }
+
+    function renderDropdown(data) {
+        closeDropdown();
+        items = buildItems(data || {});
+
+        dropdown = document.createElement("div");
+        dropdown.className = "typeahead-dropdown";
+
+        if (items.length === 0) {
+            const emptyText = (typeof appState !== "undefined" && appState.lang === "en") ? "No matches found" : "无匹配结果";
+            dropdown.innerHTML = `<div class="typeahead-empty">${escapeHtml(emptyText)}</div>`;
+        } else {
+            dropdown.innerHTML = items.map((item, i) => {
+                const sub = item.sub ? `<span class="typeahead-sub">${escapeHtml(item.sub)}</span>` : "";
+                const rating = item.rating != null ? `<span class="typeahead-rating">${escapeHtml(String(item.rating))}</span>` : "";
+                return `<div class="typeahead-item" data-index="${escapeAttr(String(i))}">` +
+                    `<span class="typeahead-label">${escapeHtml(item.label)}</span>` +
+                    sub + rating +
+                    `</div>`;
+            }).join("");
+        }
+
+        if (wrapper) wrapper.appendChild(dropdown);
+
+        dropdown.querySelectorAll(".typeahead-item").forEach(el => {
+            el.addEventListener("mousedown", (e) => {
+                e.preventDefault();
+                const idx = parseInt(el.dataset.index, 10);
+                selectItem(idx);
+            });
+        });
+    }
+
+    function selectItem(idx) {
+        if (idx < 0 || idx >= items.length) return;
+        const item = items[idx];
+        suppressInput = true;
+        input.value = item.value;
+        closeDropdown();
+        if (typeof onSelect === "function") onSelect(item.value, item);
+    }
+
+    function setActiveIndex(idx) {
+        activeIndex = idx;
+        if (!dropdown) return;
+        const els = dropdown.querySelectorAll(".typeahead-item");
+        els.forEach((el, i) => {
+            el.classList.toggle("active", i === idx);
+        });
+        if (idx >= 0 && els[idx]) {
+            els[idx].scrollIntoView({ block: "nearest" });
+        }
+    }
+
+    async function fetchSuggestions(query) {
+        try {
+            const data = await fetchJson("/search?q=" + encodeURIComponent(query) + "&type=" + type + "&limit=10");
+            if (input.value.trim() !== query) return;
+            renderDropdown(data);
+        } catch (_) {
+            /* silently degrade */
+        }
+    }
+
+    input.addEventListener("input", () => {
+        if (suppressInput) {
+            suppressInput = false;
+            return;
+        }
+        const query = input.value.trim();
+        if (query.length < 2) {
+            closeDropdown();
+            return;
+        }
+        clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(() => fetchSuggestions(query), 300);
+    });
+
+    input.addEventListener("keydown", (e) => {
+        if (!dropdown || items.length === 0) {
+            if (e.key === "Escape") closeDropdown();
+            return;
+        }
+        if (e.key === "ArrowDown") {
+            e.preventDefault();
+            setActiveIndex(activeIndex < items.length - 1 ? activeIndex + 1 : 0);
+        } else if (e.key === "ArrowUp") {
+            e.preventDefault();
+            setActiveIndex(activeIndex > 0 ? activeIndex - 1 : items.length - 1);
+        } else if (e.key === "Enter") {
+            if (activeIndex >= 0) {
+                e.preventDefault();
+                e.stopImmediatePropagation();
+                selectItem(activeIndex);
+            }
+        } else if (e.key === "Escape") {
+            e.preventDefault();
+            closeDropdown();
+        }
+    });
+
+    input.addEventListener("blur", () => {
+        setTimeout(closeDropdown, 150);
+    });
+
+    return { close: closeDropdown };
 }
 
 async function fetchPredictionCalibration() {
@@ -1529,6 +1694,18 @@ async function fetchValueReport() {
 async function fetchPlayerComparison(a, b) {
     try {
         const data = await fetchJson(`/players/compare?a=${encodeURIComponent(a)}&b=${encodeURIComponent(b)}`);
+        // Static fallback returns a pairs list; find the matching pair client-side.
+        if (data && Array.isArray(data.pairs)) {
+            const aLower = a.toLowerCase();
+            const bLower = b.toLowerCase();
+            const pair = data.pairs.find(p => {
+                const na = (p.player_a && p.player_a.name || "").toLowerCase();
+                const nb = (p.player_b && p.player_b.name || "").toLowerCase();
+                return (na === aLower && nb === bLower) || (na === bLower && nb === aLower);
+            });
+            if (pair) return pair;
+            return { error: "对比数据离线不可用" };
+        }
         return data;
     } catch (err) {
         console.warn("Failed to fetch comparison:", err);
@@ -1540,6 +1717,10 @@ async function renderCompare() {
     const btn = document.getElementById("compare-btn");
     const inputA = document.getElementById("compare-input-a");
     const inputB = document.getElementById("compare-input-b");
+
+    // Wire typeahead first so its keydown handler runs before the Enter handler below
+    SearchTypeahead("compare-input-a", "players");
+    SearchTypeahead("compare-input-b", "players");
 
     if (btn && !btn.dataset.bound) {
         btn.dataset.bound = "1";
@@ -3029,6 +3210,18 @@ function renderTeamsChart(teams) {
 async function fetchTeamComparison(a, b) {
     try {
         const data = await fetchJson(`/teams/compare?a=${encodeURIComponent(a)}&b=${encodeURIComponent(b)}`);
+        // Static fallback returns a pairs list; find the matching pair client-side.
+        if (data && Array.isArray(data.pairs)) {
+            const aLower = a.toLowerCase();
+            const bLower = b.toLowerCase();
+            const pair = data.pairs.find(p => {
+                const na = (p.team_a && p.team_a.name || "").toLowerCase();
+                const nb = (p.team_b && p.team_b.name || "").toLowerCase();
+                return (na === aLower && nb === bLower) || (na === bLower && nb === aLower);
+            });
+            if (pair) return pair;
+            return { error: "对比数据离线不可用" };
+        }
         return data;
     } catch (err) {
         console.warn("Failed to fetch team comparison:", err);
@@ -3040,6 +3233,11 @@ function initTeamCompareControls() {
     const btn = document.getElementById("team-compare-btn");
     const inputA = document.getElementById("team-compare-input-a");
     const inputB = document.getElementById("team-compare-input-b");
+
+    // Wire typeahead first so its keydown handler runs before the Enter handler below
+    SearchTypeahead("team-compare-input-a", "teams");
+    SearchTypeahead("team-compare-input-b", "teams");
+
     if (!btn || btn.dataset.bound) return;
     btn.dataset.bound = "1";
 
@@ -4068,6 +4266,10 @@ function bindEvents() {
             if (appState.view !== "players") setView("players");
             else renderPlayers();
         }, 300);
+    });
+    // Wire typeahead suggestions on the global player search
+    SearchTypeahead("global-search", "players", () => {
+        document.getElementById("global-search").dispatchEvent(new Event("input", { bubbles: true }));
     });
     document.querySelectorAll("[data-value-mode]").forEach((button) => {
         button.addEventListener("click", () => {

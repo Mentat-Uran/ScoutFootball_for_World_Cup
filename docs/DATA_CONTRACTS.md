@@ -625,6 +625,56 @@ Radar values are position-pool percentiles (0-100). Position percentile comparis
 uses position-specific dimensions from `POSITION_DIMENSIONS`. Players in different
 position groups will have different dimension sets.
 
+### GET /search
+
+Returns typeahead suggestions for player and team search inputs. Matching is
+prefix-first with substring fallback: prefix matches are returned before
+substring matches so that common short queries surface relevant entries first.
+
+**Query params**:
+- `q` (str, required): Search term. Results are returned only when `q` has at
+  least 2 characters; shorter queries return empty lists.
+- `type` (str, default="all"): Filter scope. One of `players`, `teams`, or
+  `all`. `players` returns only the `players` array; `teams` returns only the
+  `teams` array; `all` returns both.
+- `limit` (int, default=10, max=25): Maximum number of results per category
+  (players and teams are capped independently).
+
+**Response**:
+```json
+{
+  "players": [
+    { "player_name": "string", "team": "string", "position": "string", "rating": 85.0, "league": "string" }
+  ],
+  "teams": [
+    { "team_name": "string", "league": "string" }
+  ]
+}
+```
+
+**Edge cases**:
+- Empty or sub-2-char `q` returns `{"players": [], "teams": []}`.
+- Empty underlying data returns `{"players": [], "teams": []}` rather than an error.
+- `limit` values above 25 are clamped to 25; non-positive values fall back to the default of 10.
+
+### Cache Configuration
+
+The following data loaders and helpers use TTL caches (replacing the previous
+permanent `lru_cache`) so that model retrains and data refreshes are visible to
+the API without a process restart:
+
+- `_load_all_player_ratings()`
+- `load_model_meta()`
+- `load_league_metrics()`
+- `load_player_value_metrics()`
+- `_wc_cache` (world-cup helpers in `src/scoutfootball/api.py`)
+- `get_prediction_calibration()` (5-minute TTL; migrated in an earlier round)
+
+**Environment variable**: `SCOUTFOOTBALL_CACHE_TTL_SECONDS` (int, default=300)
+controls the TTL in seconds for the data loader caches. Each cached function
+accepts a `force_refresh=False` parameter; when `True`, the cache entry is
+bypassed and repopulated on the next call.
+
 ---
 
 ## 9.5 Static Snapshot Contracts
@@ -656,6 +706,75 @@ position groups will have different dimension sets.
     { "player": "string", "team": "string", "league": "string",
       "season": "string", "position_group": "string",
       "optimized_score": 85.0, "minutes": 2500 }
+  ]
+}
+```
+
+### player_compare_pairs.json
+
+**File**: `frontend/data/player_compare_pairs.json`
+**Source**: `GET /players/compare` responses for a curated set of player pairs.
+Exported by the `compare` section of `scripts/export_static_frontend_data.py`.
+
+Used as the offline fallback for the player comparison view when the API is
+unavailable. The frontend loads the pairs JSON once and does a client-side
+lookup by normalized player names.
+
+```json
+{
+  "pairs": [
+    {
+      "a": "Player One",
+      "b": "Player Two",
+      "comparison": {
+        "player_a": { "name": "...", "team": "...", "position_group": "ST", "optimized_score": 72.0 },
+        "player_b": { "name": "...", "team": "...", "position_group": "CM", "optimized_score": 68.0 },
+        "radar_labels": ["Attack", "Possession", "Defense", "Reliability", "Impact"],
+        "radar_a": [85.0, 40.0, 20.0, 100.0, 75.0],
+        "radar_b": [30.0, 80.0, 70.0, 100.0, 60.0],
+        "radar_comparison": [
+          { "dimension": "Attack", "player_a": 85.0, "player_b": 30.0, "diff": 55.0, "advantage": "a" }
+        ],
+        "position_percentile_comparison": [],
+        "stats_comparison": [
+          { "metric": "optimized_score", "player_a": 72.0, "player_b": 68.0, "diff": 4.0 }
+        ],
+        "same_position": false
+      }
+    }
+  ]
+}
+```
+
+### team_compare_pairs.json
+
+**File**: `frontend/data/team_compare_pairs.json`
+**Source**: `GET /teams/compare` responses for a curated set of team pairs.
+Exported by the `compare` section of `scripts/export_static_frontend_data.py`.
+
+Used as the offline fallback for the team comparison view. Same lookup
+strategy as `player_compare_pairs.json`.
+
+```json
+{
+  "pairs": [
+    {
+      "a": "Team Alpha",
+      "b": "Team Beta",
+      "comparison": {
+        "team_a": { "name": "...", "league": "...", "overall_rating": 65.5, "squad_size": 22 },
+        "team_b": { "name": "...", "league": "...", "overall_rating": 68.0, "squad_size": 25 },
+        "overall_diff": -2.5,
+        "overall_advantage": "b",
+        "position_group_comparison": [
+          { "group": "GK", "rating_a": 55.0, "rating_b": 60.0, "diff": -5.0, "advantage": "b", "players_a": 2, "players_b": 3 }
+        ],
+        "top_players_comparison": [],
+        "radar_labels": ["GK", "DEF", "MID", "ATT", "Overall"],
+        "radar_a": [55.0, 60.0, 65.0, 70.0, 65.5],
+        "radar_b": [60.0, 62.0, 68.0, 72.0, 68.0]
+      }
+    }
   ]
 }
 ```

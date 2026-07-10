@@ -28,6 +28,7 @@ LOCAL_DATA_DIR = FRONTEND_DIR / "local-data"
 DEFAULT_RATINGS_LIMIT = 3000
 DEFAULT_ACTION_VALUES_LIMIT = 500
 DEFAULT_QUEUE_LIMIT = 200
+DEFAULT_COMPARE_LIMIT = 10
 
 DATA_DIR = RELEASE_DATA_DIR
 WORLDCUP_DIR = DATA_DIR / "worldcup"
@@ -267,6 +268,117 @@ def export_sample_player_profiles(limit: int = 30) -> None:
     print(f"  player_profiles/*.json ({exported} players)")
 
 
+def _meaningful_pair_indices(n: int, max_pairs: int = 10) -> list[tuple[int, int]]:
+    """Generate up to ``max_pairs`` meaningful comparison indices from top-N items.
+
+    Produces top-1 vs next-4, then adjacent rivals (1v2, 2v3, 3v4), deduped.
+    """
+    if n < 2:
+        return []
+    pairs: list[tuple[int, int]] = []
+    # Top item vs each of the next few
+    for j in range(1, min(n, 5)):
+        pairs.append((0, j))
+    # Adjacent rivals
+    for i in range(1, min(n - 1, 4)):
+        pairs.append((i, i + 1))
+    # Deduplicate while preserving order
+    seen: set[tuple[int, int]] = set()
+    result: list[tuple[int, int]] = []
+    for p in pairs:
+        if p not in seen:
+            seen.add(p)
+            result.append(p)
+        if len(result) >= max_pairs:
+            break
+    return result
+
+
+def export_compare(limit: int = DEFAULT_COMPARE_LIMIT) -> None:
+    """Export player and team comparison pairs for static/offline fallback.
+
+    Picks the top-N players by rating and top-N teams by strength, generates
+    a set of meaningful pairs (top vs next, adjacent rivals), and writes the
+    comparison results to ``player_compare_pairs.json`` and
+    ``team_compare_pairs.json``.  Pairs that error are skipped; if all fail,
+    an empty ``{"pairs": []}`` file is still written.
+    """
+    from scoutfootball.api import (
+        get_player_comparison,
+        get_player_ratings,
+        get_team_comparison,
+        get_team_strength,
+    )
+
+    pair_indices = _meaningful_pair_indices(limit)
+
+    # ── Player comparison pairs ───────────────────────────────────
+    ratings = get_player_ratings(limit=limit)
+    players = ratings.get("players", [])
+
+    def _player_name(p: dict) -> str | None:
+        return p.get("player") or p.get("player_name")
+
+    player_pairs: list[dict] = []
+    for i, j in pair_indices:
+        if i >= len(players) or j >= len(players):
+            continue
+        name_a = _player_name(players[i])
+        name_b = _player_name(players[j])
+        if not name_a or not name_b:
+            continue
+        try:
+            comparison = get_player_comparison(name_a, name_b)
+            if "error" in comparison:
+                print(
+                    f"  WARN: player compare {name_a} vs {name_b}: "
+                    f"{comparison['error']}"
+                )
+                continue
+            player_pairs.append(
+                {"a": name_a, "b": name_b, "comparison": comparison}
+            )
+        except Exception as exc:
+            print(f"  WARN: player compare {name_a} vs {name_b} failed: {exc}")
+            continue
+
+    _write_json(DATA_DIR / "player_compare_pairs.json", {"pairs": player_pairs})
+
+    # ── Team comparison pairs ─────────────────────────────────────
+    strength = get_team_strength(limit=limit)
+    teams = strength.get("teams", [])
+
+    team_pairs: list[dict] = []
+    for i, j in pair_indices:
+        if i >= len(teams) or j >= len(teams):
+            continue
+        name_a = teams[i].get("team")
+        name_b = teams[j].get("team")
+        if not name_a or not name_b:
+            continue
+        try:
+            comparison = get_team_comparison(name_a, name_b)
+            if "error" in comparison:
+                print(
+                    f"  WARN: team compare {name_a} vs {name_b}: "
+                    f"{comparison['error']}"
+                )
+                continue
+            team_pairs.append(
+                {"a": name_a, "b": name_b, "comparison": comparison}
+            )
+        except Exception as exc:
+            print(f"  WARN: team compare {name_a} vs {name_b} failed: {exc}")
+            continue
+
+    _write_json(DATA_DIR / "team_compare_pairs.json", {"pairs": team_pairs})
+
+    print(
+        f"  player_compare_pairs.json ({len(player_pairs)} pairs), "
+        f"team_compare_pairs.json ({len(team_pairs)} pairs)"
+    )
+
+
 def write_manifest() -> None:
     """Write a small manifest file so the frontend can show last-updated time."""
     import datetime as dt
@@ -312,13 +424,20 @@ def main() -> int:
         help="If >0, also export top-N player profile JSON files (default: 200)",
     )
     parser.add_argument(
+        "--compare-limit", type=int, default=DEFAULT_COMPARE_LIMIT,
+        help=(
+            f"Top-N players/teams to pair for comparison export "
+            f"(default: {DEFAULT_COMPARE_LIMIT})"
+        ),
+    )
+    parser.add_argument(
         "--skip",
         nargs="*",
         default=[],
         choices=[
             "basics", "ratings", "value", "predictions",
             "action_values", "scouting", "model_runs",
-            "worldcup", "manifest",
+            "worldcup", "compare", "player_profiles", "manifest",
         ],
         help="Sections to skip",
     )
@@ -356,6 +475,7 @@ def main() -> int:
         ("scouting", lambda: export_scouting(args.queue_limit)),
         ("model_runs", lambda: export_model_runs()),
         ("worldcup", lambda: export_worldcup()),
+        ("compare", lambda: export_compare(args.compare_limit)),
     ]
 
     for name, fn in sections:

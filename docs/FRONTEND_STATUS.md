@@ -46,6 +46,15 @@
 - NaN/undefined 数值显示已加防护：数值字段遇到 NaN/undefined 时显示为 "N/A" 或空，不会渲染为原始字符串。
 - 世界杯页状态 pill 已动态化：根据实际数据来源显示 LIVE/STATIC/OFFLINE，而非硬编码。
 
+### 搜索 typeahead（2026-07-10）
+
+- 球员搜索、球员对比 A/B、球队对比 A/B 共 5 个输入框接入 `SearchTypeahead` 组件（`frontend/app.js`）。
+- 最少 2 个字符触发请求，300ms 防抖；请求由 `GET /search?q=&type=&limit=` 提供，前缀优先、子串回退。
+- 键盘导航：上/下箭头移动高亮项，Enter 选中，Escape 关闭建议面板；鼠标点击同样选中。
+- API 离线时静默降级：不渲染建议面板、不抛错，输入框仍可手动提交。
+- 球员对比和球队对比端点额外提供静态 fallback：离线时前端加载 `frontend/data/player_compare_pairs.json` 或 `team_compare_pairs.json`，按归一化名称做客户端 pair 查找；未命中 pair 时提示无静态对比数据。
+- 边界：静态 compare pairs 是发布快照子集，不等同于全量 API 覆盖；仅作为离线演示 fallback。
+
 ### 静态模式
 
 - API 在线时优先读取 FastAPI。

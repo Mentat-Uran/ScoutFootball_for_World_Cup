@@ -12,6 +12,8 @@ import numpy as np
 import pandas as pd
 
 from scoutfootball.app.data_loader import (
+    _MISSING,
+    _TTLCache,
     data_source_label,
     load_league_metrics,
     load_model_meta,
@@ -54,22 +56,43 @@ def _read_parquet(path: Path):
 
 
 # ── World Cup data cache ──────────────────────────────────────────
-_wc_cache: dict[str, Any] = {}
+_wc_cache = _TTLCache()
+_WC_ENRICHED_KEY = "wc_enriched"
+_WC_SCOUTING_KEY = "wc_scouting_queues"
 
 
-def _get_wc_enriched_squads():
-    """Return enriched WC squads, computing once and caching."""
-    if "enriched_squads" not in _wc_cache:
-        ratings_df = load_player_ratings()
-        _wc_cache["enriched_squads"] = enrich_squads_with_ratings(ratings_df)
-        _wc_cache["strength_details"] = compute_team_strength_details(
-            enriched_squads=_wc_cache["enriched_squads"]
+def _get_wc_enriched_squads(force_refresh: bool = False):
+    """Return enriched WC squads, computing once and caching with TTL.
+
+    Pass ``force_refresh=True`` to bypass the cache (e.g. after model retraining).
+    """
+    cached = _wc_cache.get(_WC_ENRICHED_KEY)
+    if cached is _MISSING or force_refresh:
+        ratings_df = load_player_ratings(force_refresh=force_refresh)
+        enriched_squads = enrich_squads_with_ratings(ratings_df)
+        strength_details = compute_team_strength_details(
+            enriched_squads=enriched_squads
         )
-        _wc_cache["strengths"] = {
+        strengths = {
             team: values["strength"]
-            for team, values in _wc_cache["strength_details"].items()
+            for team, values in strength_details.items()
         }
-    return _wc_cache["enriched_squads"], _wc_cache["strengths"]
+        cached = {
+            "enriched_squads": enriched_squads,
+            "strengths": strengths,
+            "strength_details": strength_details,
+        }
+        _wc_cache.set(_WC_ENRICHED_KEY, cached)
+    return cached["enriched_squads"], cached["strengths"]
+
+
+def _get_wc_strength_details(force_refresh: bool = False) -> dict:
+    """Return WC team strength details (cached alongside enriched squads)."""
+    _get_wc_enriched_squads(force_refresh=force_refresh)
+    cached = _wc_cache.get(_WC_ENRICHED_KEY)
+    if cached is _MISSING:
+        return {}
+    return cached.get("strength_details", {})
 
 
 @dataclass(frozen=True)
@@ -221,6 +244,138 @@ def list_teams() -> list[str]:
     if "team_name" in tm.columns:
         return sorted(tm["team_name"].dropna().unique().tolist())[:200]
     return []
+
+
+def search_players_and_teams(
+    q: str,
+    search_type: str = "all",
+    limit: int = 10,
+) -> dict[str, Any]:
+    """Return matching player and team name suggestions for autocomplete.
+
+    Matches are ranked prefix-first (alphabetical), then substring matches
+    (alphabetical). Returns ``{"players": [...], "teams": [...]}``.
+
+    Player entries include ``player_name``, ``team``, ``position``, ``rating``
+    (optimized_score) and ``league``. Team entries include ``team_name`` and
+    ``league``. Comma-joined club histories (transferred players) are excluded
+    from team suggestions.
+    """
+    empty_result: dict[str, Any] = {"players": [], "teams": []}
+
+    # Input validation — require at least 2 characters
+    if not q or len(q.strip()) < 2:
+        return empty_result
+    q = q.strip()
+
+    # Limit clamping (1..25, default 10)
+    try:
+        limit = int(limit)
+    except (TypeError, ValueError):
+        limit = 10
+    limit = max(1, min(limit, 25))
+
+    # Type validation — invalid values default to "all"
+    if search_type not in ("players", "teams", "all"):
+        search_type = "all"
+
+    # Load ratings via TTL cache (no forced refresh)
+    df = load_player_ratings(force_refresh=False)
+    if df is None or df.empty:
+        return _clean_json_value(empty_result)
+
+    # Resolve column names (normalize_ratings_frame ensures aliases exist)
+    name_col = (
+        "player" if "player" in df.columns
+        else ("player_name" if "player_name" in df.columns else None)
+    )
+    team_col = (
+        "team" if "team" in df.columns
+        else ("team_name" if "team_name" in df.columns else None)
+    )
+    league_col = "league" if "league" in df.columns else None
+    pos_col = (
+        "position_group" if "position_group" in df.columns
+        else ("sub_position" if "sub_position" in df.columns else None)
+    )
+    score_col = (
+        "optimized_score" if "optimized_score" in df.columns
+        else ("rating" if "rating" in df.columns else None)
+    )
+
+    players_out: list[dict[str, Any]] = []
+    teams_out: list[dict[str, Any]] = []
+
+    # ── Player search ──────────────────────────────────────────────
+    if search_type in ("players", "all") and name_col is not None:
+        q_lower = q.lower()
+
+        # Deduplicate by player name, keeping the best row (highest score)
+        if score_col is not None and score_col in df.columns:
+            dedup = df.sort_values(score_col, ascending=False).drop_duplicates(
+                subset=[name_col], keep="first",
+            )
+        else:
+            dedup = df.drop_duplicates(subset=[name_col], keep="first")
+        dedup = dedup[dedup[name_col].notna()]
+        dedup = dedup[dedup[name_col].astype(str).str.strip() != ""]
+
+        dedup_names = dedup[name_col].astype(str).str.lower()
+        prefix_mask = dedup_names.str.startswith(q_lower, na=False)
+        substring_mask = (
+            ~prefix_mask
+            & dedup_names.str.contains(q_lower, na=False, regex=False)
+        )
+
+        prefix_df = dedup[prefix_mask].sort_values(name_col)
+        substring_df = dedup[substring_mask].sort_values(name_col)
+        combined = pd.concat([prefix_df, substring_df]).head(limit)
+
+        for _, row in combined.iterrows():
+            score_val = row.get(score_col) if score_col else None
+            rating = (
+                round(float(score_val), 1)
+                if score_col and pd.notna(score_val)
+                else None
+            )
+            players_out.append({
+                "player_name": str(row.get(name_col, "")),
+                "team": str(row.get(team_col, "")) if team_col else "",
+                "position": str(row.get(pos_col, "")) if pos_col else "",
+                "rating": rating,
+                "league": str(row.get(league_col, "")) if league_col else "",
+            })
+
+    # ── Team search ────────────────────────────────────────────────
+    if search_type in ("teams", "all") and team_col is not None:
+        q_lower = q.lower()
+        team_df = df[df[team_col].notna()].copy()
+        # Exclude comma-joined club histories (transferred players)
+        team_df = team_df[~team_df[team_col].astype(str).str.contains(",", na=False)]
+        team_df = team_df[team_df[team_col].astype(str).str.strip() != ""]
+
+        if not team_df.empty:
+            # Unique teams with league info (first occurrence)
+            teams_unique = team_df.drop_duplicates(subset=[team_col], keep="first")
+            team_names_lower = teams_unique[team_col].astype(str).str.lower()
+
+            prefix_mask = team_names_lower.str.startswith(q_lower, na=False)
+            substring_mask = (
+                ~prefix_mask
+                & team_names_lower.str.contains(q_lower, na=False, regex=False)
+            )
+
+            prefix_teams = teams_unique[prefix_mask].sort_values(team_col)
+            substring_teams = teams_unique[substring_mask].sort_values(team_col)
+            combined_teams = pd.concat([prefix_teams, substring_teams]).head(limit)
+
+            for _, row in combined_teams.iterrows():
+                teams_out.append({
+                    "team_name": str(row.get(team_col, "")),
+                    "league": str(row.get(league_col, "")) if league_col else "",
+                })
+
+    return _clean_json_value({"players": players_out, "teams": teams_out})
 
 
 def _score_matrix_to_list(prediction) -> list[list[float]]:
@@ -1296,28 +1451,32 @@ def get_artifacts_summary() -> dict:
     })
 
 
-def _get_scouting_queues():
+def _get_scouting_queues(force_refresh: bool = False):
     """Build and cache scouting queues to avoid redundant computation.
 
     Each of get_review_queue / get_watchlist / get_shortlist previously
     called build_scouting_queues independently on the full ratings
     DataFrame.  This helper computes the queues once per process and
     reuses the result for all three endpoints.
+
+    Pass ``force_refresh=True`` to bypass the cache (e.g. after model retraining).
     """
-    if "scouting_queues" not in _wc_cache:
-        df = load_player_ratings()
+    cached = _wc_cache.get(_WC_SCOUTING_KEY)
+    if cached is _MISSING or force_refresh:
+        df = load_player_ratings(force_refresh=force_refresh)
         if df.empty:
             from scoutfootball.evaluation.scouting_queue import ScoutingQueues
-            _wc_cache["scouting_queues"] = ScoutingQueues(
+            queues = ScoutingQueues(
                 review_queue=df, watchlist=df, shortlist=df,
             )
         else:
-            _wc_cache["scouting_queues"] = build_scouting_queues(
+            queues = build_scouting_queues(
                 df,
                 run_id=_latest_run_id(),
                 reports_root=_settings().data_root / "reports",
             )
-    return _wc_cache["scouting_queues"]
+        _wc_cache.set(_WC_SCOUTING_KEY, queues)
+    return _wc_cache.get(_WC_SCOUTING_KEY)
 
 
 def get_review_queue(limit: int = 200) -> dict:
@@ -2275,7 +2434,7 @@ def get_wc_squad(team: str) -> dict:
 def get_wc_predictions() -> dict:
     """Return World Cup group stage predictions based on team strengths."""
     enriched, strengths = _get_wc_enriched_squads()
-    strength_details = _wc_cache.get("strength_details", {})
+    strength_details = _get_wc_strength_details()
     group_preds = compute_group_predictions(strengths)
 
     # Build 48-team ranking
@@ -2326,7 +2485,7 @@ def get_wc_predictions() -> dict:
 def get_wc_teams() -> dict:
     """Return all 48 World Cup teams with strength ratings and group info."""
     enriched, strengths = _get_wc_enriched_squads()
-    strength_details = _wc_cache.get("strength_details", {})
+    strength_details = _get_wc_strength_details()
 
     teams_data = []
     for letter, team_names in GROUPS.items():

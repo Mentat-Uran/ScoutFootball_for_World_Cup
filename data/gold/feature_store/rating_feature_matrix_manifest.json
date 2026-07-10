@@ -71,7 +71,7 @@
       "name": "tackles",
       "dtype": "object",
       "source": "player_stats",
-      "missing_rate": 1.0
+      "missing_rate": 0.2232
     },
     {
       "name": "passes",
@@ -237,5 +237,5 @@
     }
   ],
   "input_hash": "unknown",
-  "timestamp": "2026-06-22T17:01:13.066588+00:00"
+  "timestamp": "2026-07-10T16:47:44.647368+00:00"
 }
