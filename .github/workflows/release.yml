@@ -11,6 +11,10 @@ on:
         options:
           - 'true'
           - 'false'
+      release_tag:
+        description: 'Upload assets to an existing release tag (e.g. v1.0.3). If empty, a new timestamped tag is created.'
+        required: false
+        default: ''
 
 permissions:
   contents: write
@@ -27,9 +31,14 @@ jobs:
         id: version
         shell: bash
         run: |
-          VERSION="v$(date -u +%Y%m%d.%H%M%S)-$(echo "$GITHUB_SHA" | cut -c1-7)"
+          INPUT_TAG="${{ github.event.inputs.release_tag }}"
+          if [ -n "$INPUT_TAG" ]; then
+            VERSION="$INPUT_TAG"
+          else
+            VERSION="v$(date -u +%Y%m%d.%H%M%S)-$(echo "$GITHUB_SHA" | cut -c1-7)"
+          fi
           echo "tag=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "Generated version: $VERSION"
+          echo "Using version: $VERSION"
 
       - name: Generate GHCR image name
         id: image
@@ -200,7 +209,6 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.version.outputs.tag }}
-          name: "Release ${{ needs.version.outputs.tag }}"
           body: |
             ## ScoutFootball ${{ needs.version.outputs.tag }}
 
@@ -227,6 +235,6 @@ jobs:
             artifacts/**/*.tar
             docs/USER_GUIDE.md
           prerelease: false
-          generate_release_notes: true
+          generate_release_notes: ${{ github.event.inputs.release_tag == '' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
