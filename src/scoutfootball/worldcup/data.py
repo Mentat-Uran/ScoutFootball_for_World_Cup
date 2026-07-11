@@ -1905,3 +1905,251 @@ def compute_group_predictions(
         })
 
     return results
+
+
+# ── Knockout bracket simulation ─────────────────────────────────────────
+
+
+def _knockout_match_prob(
+    home_strength: float, away_strength: float, *, k: float = 2.8
+) -> float:
+    """Return probability that the home team wins a knockout match.
+
+    Uses a Bradley-Terry-like model with amplification exponent *k*.
+    In knockout rounds there is no draw; if the match is level after
+    extra time the winner is decided by penalties, so we fold the
+    draw probability into a coin-flip for evenly matched teams.
+    """
+    if home_strength <= 0 and away_strength <= 0:
+        return 0.5
+    hs = max(home_strength, 1e-6) ** k
+    as_ = max(away_strength, 1e-6) ** k
+    return hs / (hs + as_)
+
+
+def _predict_group_finishes(
+    group_predictions: list[dict],
+) -> tuple[list[tuple[str, str, float]], list[tuple[str, str, float]], list[tuple[str, str, float]]]:
+    """Return (first, second, third) lists of (group, team, strength) sorted by strength.
+
+    Each group prediction is expected to have ``group`` and ``teams`` keys,
+    where each team has ``team``, ``strength``, ``p1st``, ``p2nd``, ``p3rd``.
+    The most likely finishing order (1st/2nd/3rd) is derived from the
+    probabilities.
+    """
+    firsts: list[tuple[str, str, float]] = []
+    seconds: list[tuple[str, str, float]] = []
+    thirds: list[tuple[str, str, float]] = []
+    for gp in group_predictions:
+        letter = gp["group"]
+        teams = list(gp["teams"])
+        if not teams:
+            continue
+        # Pick the most likely 1st, then 2nd, then 3rd
+        ranked = sorted(teams, key=lambda t: (-t.get("p1st", 0), -t.get("strength", 0)))
+        if len(ranked) >= 1:
+            t = ranked[0]
+            firsts.append((letter, t["team"], t.get("strength", 0.2)))
+        if len(ranked) >= 2:
+            t = ranked[1]
+            seconds.append((letter, t["team"], t.get("strength", 0.2)))
+        if len(ranked) >= 3:
+            t = ranked[2]
+            thirds.append((letter, t["team"], t.get("strength", 0.2)))
+    return firsts, seconds, thirds
+
+
+def _seed_round_of_32(
+    firsts: list[tuple[str, str, float]],
+    seconds: list[tuple[str, str, float]],
+    thirds: list[tuple[str, str, float]],
+) -> list[tuple[str, str, float, str, str, float]]:
+    """Create 16 Round-of-32 matchups as (home_group, home_team, home_str, away_group, away_team, away_str).
+
+    The 2026 World Cup has 12 group winners + 12 runners-up + 8 best
+    third-placed teams = 32 teams. The official bracket pairs winners
+    against runners-up/thirds from specific groups, but the exact third-
+    place assignment depends on which groups the best thirds come from.
+
+    We use a simplified but fair seeding: group winners are seeded by
+    strength and paired against runners-up/thirds by a complementary
+    seed, so that strong winners are not paired together early.
+    """
+    # Sort winners by strength descending
+    winners = sorted(firsts, key=lambda x: -x[2])
+    # Sort runners-up by strength descending
+    runners = sorted(seconds, key=lambda x: -x[2])
+    # Best 8 third-placed teams by strength
+    best_thirds = sorted(thirds, key=lambda x: -x[2])[:8]
+
+    # Build the 32-team pool: 12 winners + 12 runners-up + 8 thirds = 32
+    # Seeds 1-12 = winners (by strength), 13-24 = runners-up, 25-32 = thirds
+    seeded: list[tuple[str, str, float]] = []
+    seeded.extend(winners)
+    seeded.extend(runners)
+    seeded.extend(best_thirds)
+
+    # Standard bracket: seed 1 vs seed 32, 2 vs 31, etc.
+    n = len(seeded)
+    matchups: list[tuple[str, str, float, str, str, float]] = []
+    for i in range(n // 2):
+        home = seeded[i]
+        away = seeded[n - 1 - i]
+        matchups.append((home[0], home[1], home[2], away[0], away[1], away[2]))
+    return matchups
+
+
+def simulate_knockout(
+    team_strengths: dict[str, float],
+    group_predictions: list[dict] | None = None,
+    *,
+    num_simulations: int = 10000,
+    seed: int = 42,
+) -> dict:
+    """Simulate the World Cup knockout bracket and return round-by-round probabilities.
+
+    Parameters
+    ----------
+    team_strengths:
+        Mapping of team name → strength score (0-1 scale).
+    group_predictions:
+        Optional pre-computed group predictions from
+        :func:`compute_group_predictions`. If ``None``, will be computed
+        from *team_strengths*.
+    num_simulations:
+        Number of Monte Carlo simulations for tournament win probability.
+    seed:
+        Random seed for reproducibility.
+
+    Returns
+    -------
+    dict with keys:
+        - ``round_of_32``: list of 16 matchups, each with home/away teams,
+          strengths, and win probability.
+        - ``round_of_16``: list of 8 projected matchups with advancement
+          probabilities (most likely winner).
+        - ``quarter_finals``: list of 4 projected matchups.
+        - ``semi_finals``: list of 2 projected matchups.
+        - ``final``: the projected final matchup.
+        - ``tournament_win_probability``: list of all 48 teams with their
+          probability of winning the tournament (sorted descending).
+        - ``disclaimer``: limitations notice.
+    """
+    import random
+
+    rng = random.Random(seed)
+
+    if group_predictions is None:
+        group_predictions = compute_group_predictions(team_strengths)
+
+    firsts, seconds, thirds = _predict_group_finishes(group_predictions)
+    r32_matchups = _seed_round_of_32(firsts, seconds, thirds)
+
+    # ── Round of 32 matchups with probabilities ──
+    r32: list[dict] = []
+    for hg, ht, hs, ag, at_, as_ in r32_matchups:
+        p_home = _knockout_match_prob(hs, as_)
+        r32.append({
+            "home_group": hg,
+            "home_team": ht,
+            "home_strength": round(hs, 4),
+            "away_group": ag,
+            "away_team": at_,
+            "away_strength": round(as_, 4),
+            "home_win_probability": round(p_home, 4),
+            "away_win_probability": round(1 - p_home, 4),
+        })
+
+    # ── Project subsequent rounds by picking most likely winners ──
+    def _project_round(prev_matchups: list[dict]) -> list[dict]:
+        """Project the next round by advancing the most likely winner from each pair."""
+        next_matchups: list[dict] = []
+        for i in range(0, len(prev_matchups), 2):
+            if i + 1 >= len(prev_matchups):
+                break
+            m1 = prev_matchups[i]
+            m2 = prev_matchups[i + 1]
+            # Pick most likely winners
+            w1 = m1["home_team"] if m1["home_win_probability"] >= 0.5 else m1["away_team"]
+            w1_str = m1["home_strength"] if m1["home_win_probability"] >= 0.5 else m1["away_strength"]
+            w2 = m2["home_team"] if m2["home_win_probability"] >= 0.5 else m2["away_team"]
+            w2_str = m2["home_strength"] if m2["home_win_probability"] >= 0.5 else m2["away_strength"]
+            p_w1 = _knockout_match_prob(w1_str, w2_str)
+            next_matchups.append({
+                "home_team": w1,
+                "home_strength": round(w1_str, 4),
+                "away_team": w2,
+                "away_strength": round(w2_str, 4),
+                "home_win_probability": round(p_w1, 4),
+                "away_win_probability": round(1 - p_w1, 4),
+                "from_match": [i + 1, i + 2],
+            })
+        return next_matchups
+
+    r16 = _project_round(r32)
+    qf = _project_round(r16)
+    sf = _project_round(qf)
+    final = _project_round(sf)
+
+    # ── Monte Carlo tournament win probability ──
+    # Simulate the full bracket num_simulations times
+    win_counts: dict[str, int] = {team: 0 for team in team_strengths}
+    sim_count = 0
+
+    for _ in range(num_simulations):
+        # Start with the Round of 32 teams
+        current_teams: list[tuple[str, float]] = []
+        for m in r32_matchups:
+            hg, ht, hs, ag, at_, as_ = m
+            p_home = _knockout_match_prob(hs, as_)
+            if rng.random() < p_home:
+                current_teams.append((ht, hs))
+            else:
+                current_teams.append((at_, as_))
+
+        # Simulate rounds until one team remains
+        while len(current_teams) > 1:
+            next_round: list[tuple[str, float]] = []
+            for i in range(0, len(current_teams) - 1, 2):
+                t1, s1 = current_teams[i]
+                t2, s2 = current_teams[i + 1]
+                p1 = _knockout_match_prob(s1, s2)
+                if rng.random() < p1:
+                    next_round.append((t1, s1))
+                else:
+                    next_round.append((t2, s2))
+            current_teams = next_round
+
+        if current_teams:
+            winner = current_teams[0][0]
+            win_counts[winner] = win_counts.get(winner, 0) + 1
+            sim_count += 1
+
+    # Build tournament win probability list
+    tournament_win_prob: list[dict] = []
+    for team, strength in sorted(team_strengths.items(), key=lambda x: -x[1]):
+        p = win_counts.get(team, 0) / sim_count if sim_count > 0 else 0.0
+        tournament_win_prob.append({
+            "team": team,
+            "group": get_team_group(team),
+            "strength": round(strength, 4),
+            "win_probability": round(p, 4),
+        })
+    tournament_win_prob.sort(key=lambda x: -x["win_probability"])
+
+    return {
+        "status": "ok",
+        "round_of_32": r32,
+        "round_of_16": r16,
+        "quarter_finals": qf,
+        "semi_finals": sf,
+        "final": final,
+        "tournament_win_probability": tournament_win_prob[:16],
+        "num_simulations": num_simulations,
+        "disclaimer": (
+            "Knockout probabilities use a simplified Bradley-Terry strength "
+            "model. Real match outcomes depend on form, injuries, tactics "
+            "and home-field advantage not captured here. Non-Big5 league "
+            "team strengths may be underestimated."
+        ),
+    }

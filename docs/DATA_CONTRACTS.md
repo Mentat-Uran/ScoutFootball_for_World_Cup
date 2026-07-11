@@ -596,6 +596,38 @@ Full details for a single model run.
 ### GET /world-cup/groups, /world-cup/schedule, /world-cup/squads/{team}, /world-cup/predictions
 World Cup data endpoints.
 
+### GET /world-cup/knockout
+World Cup knockout bracket simulation.
+
+Returns the projected knockout bracket from Round of 32 through Final, with
+per-match win probabilities and Monte Carlo tournament win probabilities.
+
+**Response**:
+```json
+{
+  "status": "ok",
+  "round_of_32": [
+    {
+      "home_group": "J", "home_team": "Argentina", "home_strength": 0.77,
+      "away_group": "L", "away_team": "Panama", "away_strength": 0.25,
+      "home_win_probability": 0.92, "away_win_probability": 0.08
+    }
+  ],
+  "round_of_16": [ { "home_team", "home_strength", "away_team", "away_strength",
+    "home_win_probability", "away_win_probability", "from_match": [1, 2] } ],
+  "quarter_finals": [ ... ],
+  "semi_finals": [ ... ],
+  "final": [ ... ],
+  "tournament_win_probability": [
+    { "team": "Argentina", "group": "J", "strength": 0.77, "win_probability": 0.15 }
+  ],
+  "num_simulations": 10000,
+  "disclaimer": "Knockout probabilities use a simplified Bradley-Terry strength model..."
+}
+```
+
+**Static fallback**: `/data/worldcup/knockout.json`
+
 ### GET /license
 Data source license attribution.
 

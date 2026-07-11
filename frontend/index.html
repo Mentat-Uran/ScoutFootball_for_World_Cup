@@ -79,6 +79,10 @@
                     <span class="nav-icon">⊞</span>
                     <span data-i18n="nav_wc_probability">出线</span>
                 </button>
+                <button class="nav-action" data-view="wc_knockout" type="button">
+                    <span class="nav-icon">◆</span>
+                    <span data-i18n="nav_wc_knockout">淘汰赛</span>
+                </button>
                 <div class="nav-divider"></div>
                 <button class="nav-action" data-view="license" type="button">
                     <span class="nav-icon">⊛</span>
@@ -1175,6 +1179,42 @@
                                 </tr>
                             </thead>
                             <tbody id="wc-prob-table"></tbody>
+                        </table>
+                    </div>
+                </article>
+            </section>
+
+            <!-- World Cup Knockout Bracket -->
+            <section class="view" id="view-wc_knockout" aria-label="wc_knockout">
+                <div class="wc-header">
+                    <article class="liquid-panel hero-panel compact">
+                        <div class="hero-copy">
+                            <p class="eyebrow" data-i18n="wc_kicker">2026 美加墨世界杯</p>
+                            <h2 data-i18n="wc_knockout_title">淘汰赛对阵表</h2>
+                            <span class="status-pill status-low wc-knockout-status" style="font-size:0.65rem">API OFFLINE</span>
+                        </div>
+                        <div class="coverage-strip">
+                            <div><span class="metric-value">▲</span><span data-i18n="wc_entertainment">娱乐性估算</span></div>
+                        </div>
+                    </article>
+                </div>
+                <div id="wc-knockout-bracket"></div>
+                <article class="liquid-panel table-panel">
+                    <div class="panel-head">
+                        <h3 data-i18n="wc_tournament_win">夺冠概率 (Top 16)</h3>
+                    </div>
+                    <div class="table-scroll">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th data-i18n="th_rank">排名</th>
+                                    <th data-i18n="th_player">球队</th>
+                                    <th data-i18n="wc_group_col">小组</th>
+                                    <th data-i18n="wc_strength">实力评分</th>
+                                    <th data-i18n="wc_win_prob">夺冠概率</th>
+                                </tr>
+                            </thead>
+                            <tbody id="wc-knockout-table"></tbody>
                         </table>
                     </div>
                 </article>
