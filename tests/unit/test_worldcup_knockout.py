@@ -95,8 +95,20 @@ class TestPredictGroupFinishes:
             "teams": [
                 {"team": "Winner", "strength": 0.8, "p1st": 0.70, "p2nd": 0.10, "p3rd": 0.10},
                 {"team": "Runner", "strength": 0.7, "p1st": 0.20, "p2nd": 0.10, "p3rd": 0.70},
-                {"team": "Second by p2nd", "strength": 0.6, "p1st": 0.08, "p2nd": 0.95, "p3rd": 0.20},
-                {"team": "Third by p3rd", "strength": 0.5, "p1st": 0.02, "p2nd": 0.05, "p3rd": 0.95},
+                {
+                    "team": "Second by p2nd",
+                    "strength": 0.6,
+                    "p1st": 0.08,
+                    "p2nd": 0.95,
+                    "p3rd": 0.20,
+                },
+                {
+                    "team": "Third by p3rd",
+                    "strength": 0.5,
+                    "p1st": 0.02,
+                    "p2nd": 0.05,
+                    "p3rd": 0.95,
+                },
             ],
         }]
 
