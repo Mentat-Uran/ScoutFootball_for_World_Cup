@@ -89,6 +89,24 @@ class TestPredictGroupFinishes:
         strengths = [s for _, _, s in firsts]
         assert strengths == sorted(strengths, reverse=True)
 
+    def test_uses_probability_for_each_finish_position(self):
+        predictions = [{
+            "group": "A",
+            "teams": [
+                {"team": "Winner", "strength": 0.8, "p1st": 0.70, "p2nd": 0.10, "p3rd": 0.10},
+                {"team": "Runner", "strength": 0.7, "p1st": 0.20, "p2nd": 0.10, "p3rd": 0.70},
+                {"team": "Second by p2nd", "strength": 0.6, "p1st": 0.08, "p2nd": 0.95, "p3rd": 0.20},
+                {"team": "Third by p3rd", "strength": 0.5, "p1st": 0.02, "p2nd": 0.05, "p3rd": 0.95},
+            ],
+        }]
+
+        firsts, seconds, thirds = _predict_group_finishes(predictions)
+
+        assert [team for _, team, _ in firsts] == ["Winner"]
+        assert [team for _, team, _ in seconds] == ["Second by p2nd"]
+        assert [team for _, team, _ in thirds] == ["Third by p3rd"]
+        assert len({team for _, team, _ in (*firsts, *seconds, *thirds)}) == 3
+
 
 class TestSeedRoundOf32:
     def test_produces_16_matchups(self, full_strengths):

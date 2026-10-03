@@ -1945,17 +1945,23 @@ def _predict_group_finishes(
         teams = list(gp["teams"])
         if not teams:
             continue
-        # Pick the most likely 1st, then 2nd, then 3rd
-        ranked = sorted(teams, key=lambda t: (-t.get("p1st", 0), -t.get("strength", 0)))
-        if len(ranked) >= 1:
-            t = ranked[0]
-            firsts.append((letter, t["team"], t.get("strength", 0.2)))
-        if len(ranked) >= 2:
-            t = ranked[1]
-            seconds.append((letter, t["team"], t.get("strength", 0.2)))
-        if len(ranked) >= 3:
-            t = ranked[2]
-            thirds.append((letter, t["team"], t.get("strength", 0.2)))
+        # Select each finishing position from its own probability, removing
+        # each selected team so one team cannot occupy multiple places.
+        remaining = teams.copy()
+        for probability_key, destination in (
+            ("p1st", firsts),
+            ("p2nd", seconds),
+            ("p3rd", thirds),
+        ):
+            if not remaining:
+                break
+            ranked = sorted(
+                remaining,
+                key=lambda t: (-t.get(probability_key, 0), -t.get("strength", 0)),
+            )
+            team = ranked[0]
+            destination.append((letter, team["team"], team.get("strength", 0.2)))
+            remaining.remove(team)
     return firsts, seconds, thirds
 
 
