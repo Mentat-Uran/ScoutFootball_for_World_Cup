@@ -36,6 +36,13 @@ def failure_alert_step(workflow: str) -> str:
 
 
 class DailySyncIssuePermissionTests(unittest.TestCase):
+    def test_failure_alert_uses_only_existing_repository_label(self) -> None:
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        step = failure_alert_step(workflow)
+
+        self.assertRegex(step, r"(?m)^\s+labels: \['automation'\]$")
+        self.assertNotIn("'data-sync'", step)
+
     def test_failure_alert_has_issue_write_and_keeps_content_write(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
 

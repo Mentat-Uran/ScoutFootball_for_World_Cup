@@ -94,5 +94,5 @@ jobs:
               repo: context.repo.repo,
               title: `Daily data sync failed — ${new Date().toISOString().slice(0,10)}`,
               body: `The scheduled data ingestion workflow failed.\n\n[View run](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})`,
-              labels: ['automation', 'data-sync']
+              labels: ['automation']
             })
