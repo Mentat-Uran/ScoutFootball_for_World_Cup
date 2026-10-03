@@ -44,6 +44,9 @@ from scoutfootball.worldcup.data import (
     get_squad,
     get_team_group,
 )
+from scoutfootball.worldcup.data import (
+    simulate_knockout as _simulate_knockout,
+)
 
 _STATSBOMB_ATTRIBUTION = (
     "StatsBomb Open Data must be attributed in any public display. "
@@ -2547,6 +2550,22 @@ def get_wc_predictions() -> dict:
         "ranking": ranking,
         "best_third_place": third_place[:8],
     })
+
+
+def get_wc_knockout() -> dict:
+    """Return World Cup knockout bracket simulation with round-by-round probabilities.
+
+    Simulates the Round of 32 through the Final using a Bradley-Terry
+    strength model and Monte Carlo tournament win probabilities.
+    Requires the World Cup enriched squad data to be available.
+    """
+    enriched_squads, strengths = _get_wc_enriched_squads()
+    if not enriched_squads:
+        return {"status": "error", "error": "World Cup squad data not available"}
+
+    group_preds = compute_group_predictions(strengths)
+    bracket = _simulate_knockout(strengths, group_preds, num_simulations=10000)
+    return _clean_json_value(bracket)
 
 
 def get_wc_teams() -> dict:

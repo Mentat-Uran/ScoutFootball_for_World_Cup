@@ -251,9 +251,10 @@ def export_model_runs() -> None:
 
 
 def export_worldcup() -> int:
-    """Export all World Cup data: teams, groups, schedule, 48 squads, predictions."""
+    """Export all World Cup data: teams, groups, schedule, 48 squads, predictions, knockout."""
     from scoutfootball.api import (
         get_wc_groups,
+        get_wc_knockout,
         get_wc_predictions,
         get_wc_schedule,
         get_wc_squad,
@@ -265,6 +266,7 @@ def export_worldcup() -> int:
     _write_json(WORLDCUP_DIR / "groups.json", get_wc_groups())
     _write_json(WORLDCUP_DIR / "schedule.json", get_wc_schedule())
     _write_json(WORLDCUP_DIR / "predictions.json", get_wc_predictions())
+    _write_json(WORLDCUP_DIR / "knockout.json", get_wc_knockout())
 
     # 48 team squads
     squad_count = 0
@@ -274,7 +276,7 @@ def export_worldcup() -> int:
         _write_json(SQUADS_DIR / filename, squad)
         squad_count += 1
 
-    print("  worldcup/teams.json, groups.json, schedule.json, predictions.json")
+    print("  worldcup/teams.json, groups.json, schedule.json, predictions.json, knockout.json")
     print(f"  worldcup/squads/*.json ({squad_count} teams)")
     return squad_count
 

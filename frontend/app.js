@@ -122,11 +122,15 @@ const i18n = {
         nav_wc_squads: "名单",
         nav_wc_compare: "对比",
         nav_wc_probability: "出线",
+        nav_wc_knockout: "淘汰赛",
         wc_kicker: "2026 美加墨世界杯",
         wc_schedule_title: "小组赛赛程",
         wc_squads_title: "球队名单 & 评分",
         wc_compare_title: "球队实力对比",
         wc_prob_title: "小组出线概率",
+        wc_knockout_title: "淘汰赛对阵表",
+        wc_tournament_win: "夺冠概率 (Top 16)",
+        wc_win_prob: "夺冠概率",
         wc_teams: "球队",
         wc_groups: "小组",
         wc_group_matches: "小组赛",
@@ -370,11 +374,15 @@ const i18n = {
         nav_wc_squads: "Squads",
         nav_wc_compare: "Compare",
         nav_wc_probability: "Odds",
+        nav_wc_knockout: "Knockout",
         wc_kicker: "2026 FIFA World Cup",
         wc_schedule_title: "Group Stage Schedule",
         wc_squads_title: "Squad Ratings",
         wc_compare_title: "Team Comparison",
         wc_prob_title: "Advancement Probability",
+        wc_knockout_title: "Knockout Bracket",
+        wc_tournament_win: "Tournament Win Probability (Top 16)",
+        wc_win_prob: "Win Prob.",
         wc_teams: "Teams",
         wc_groups: "Groups",
         wc_group_matches: "Group Matches",
@@ -555,6 +563,7 @@ function _staticUrlFor(apiPath) {
         "/world-cup/groups": "/data/worldcup/groups.json",
         "/world-cup/schedule": "/data/worldcup/schedule.json",
         "/world-cup/predictions": "/data/worldcup/predictions.json",
+        "/world-cup/knockout": "/data/worldcup/knockout.json",
         "/world-cup/match-predictions": "/data/worldcup/match_predictions.json",
         "/world-cup/group-predictions": "/data/worldcup/group_predictions.json",
         "/world-cup/predictions-index": "/data/worldcup/predictions_index.json",
@@ -6037,6 +6046,7 @@ let wcApiData = {
     schedule: null,     // from /world-cup/schedule
     squadCache: {},     // team -> from /world-cup/squads/{team}
     predictions: null,  // from /world-cup/predictions
+    knockout: null,     // from /world-cup/knockout
     matchPredictionCache: {}, // home|away -> single-match prediction
     teams: null,        // from /worldcup/teams
     apiOnline: false,
@@ -6109,6 +6119,19 @@ async function fetchWcPredictions() {
         return data;
     } catch (e) {
         console.warn("[WC] fetchWcPredictions failed:", e.message);
+        return null;
+    }
+}
+
+async function fetchWcKnockout() {
+    try {
+        const data = await fetchJson("/world-cup/knockout", { fetchOpts: { signal: AbortSignal.timeout(90000) } });
+        if (data && data.status === "ok") {
+            wcApiData.knockout = data;
+        }
+        return data;
+    } catch (e) {
+        console.warn("[WC] fetchWcKnockout failed:", e.message);
         return null;
     }
 }
@@ -6706,6 +6729,93 @@ function renderWcProbability() {
     }
 }
 
+function renderWcKnockout() {
+    const z = currentLang === "zh";
+    const bracketEl = document.getElementById("wc-knockout-bracket");
+    const tableEl = document.getElementById("wc-knockout-table");
+    const statusEl = document.querySelector(".wc-knockout-status");
+
+    if (!wcApiData.knockout || wcApiData.knockout.status !== "ok") {
+        if (bracketEl) bracketEl.innerHTML = `<p style="color:var(--text-muted);text-align:center;padding:2rem">${z ? "淘汰赛数据加载中..." : "Loading knockout data..."}</p>`;
+        if (tableEl) tableEl.innerHTML = "";
+        if (statusEl) {
+            statusEl.textContent = "API OFFLINE";
+            statusEl.className = "status-pill status-low wc-knockout-status";
+            statusEl.style.fontSize = "0.65rem";
+        }
+        return;
+    }
+
+    const data = wcApiData.knockout;
+    if (statusEl) {
+        if (wcApiData.apiOnline) {
+            statusEl.textContent = "LIVE DATA";
+            statusEl.className = "status-pill status-high wc-knockout-status";
+        } else {
+            statusEl.textContent = "STATIC";
+            statusEl.className = "status-pill status-medium wc-knockout-status";
+        }
+        statusEl.style.fontSize = "0.65rem";
+    }
+
+    const roundLabels = z
+        ? { r32: "32 强", r16: "16 强", qf: "四分之一决赛", sf: "半决赛", final: "决赛" }
+        : { r32: "Round of 32", r16: "Round of 16", qf: "Quarter-Finals", sf: "Semi-Finals", final: "Final" };
+
+    function matchupHtml(m) {
+        if (!m) return "";
+        const ht = escapeHtml(m.home_team || "?");
+        const at = escapeHtml(m.away_team || "?");
+        const hp = Math.round((m.home_win_probability || 0) * 100);
+        const ap = Math.round((m.away_win_probability || 0) * 100);
+        const homeWin = hp >= ap;
+        return `<div class="ko-matchup">
+            <div class="ko-team${homeWin ? " ko-winner" : ""}">
+                <span class="ko-name">${ht}</span>
+                <span class="ko-prob">${hp}%</span>
+            </div>
+            <div class="ko-team${!homeWin ? " ko-winner" : ""}">
+                <span class="ko-name">${at}</span>
+                <span class="ko-prob">${ap}%</span>
+            </div>
+        </div>`;
+    }
+
+    function roundColumn(label, matchups) {
+        if (!matchups || matchups.length === 0) return "";
+        const matches = matchups.map((m) => matchupHtml(m)).join("");
+        return `<div class="ko-round">
+            <h4 class="ko-round-title">${escapeHtml(label)}</h4>
+            ${matches}
+        </div>`;
+    }
+
+    const html = `<div class="ko-bracket">
+        ${roundColumn(roundLabels.r32, data.round_of_32)}
+        ${roundColumn(roundLabels.r16, data.round_of_16)}
+        ${roundColumn(roundLabels.qf, data.quarter_finals)}
+        ${roundColumn(roundLabels.sf, data.semi_finals)}
+        ${roundColumn(roundLabels.final, data.final)}
+    </div>`;
+
+    if (bracketEl) bracketEl.innerHTML = html;
+
+    // Tournament win probability table
+    if (tableEl) {
+        const winProb = data.tournament_win_probability || [];
+        tableEl.innerHTML = winProb.map((x, i) => {
+            const pct = (x.win_probability || 0) * 100;
+            return `<tr>
+                <td>${i + 1}</td>
+                <td>${escapeHtml(x.team)}</td>
+                <td>${escapeHtml(x.group || "?")}</td>
+                <td>${(x.strength || 0).toFixed(3)}</td>
+                <td><div class="probability-track"><div class="probability-fill" style="width:${sanitizeCssPercent(pct)}%"></div></div><strong>${pct.toFixed(1)}%</strong></td>
+            </tr>`;
+        }).join("");
+    }
+}
+
 // ── Init World Cup ───────────────────────────────────────────────────────
 
 async function initWorldCup() {
@@ -6730,11 +6840,12 @@ async function initWorldCup() {
     appState.wcCompareB = "France";
 
     // Fetch API data in background, then re-render
-    const [groupsData, scheduleData, predictionsData, teamsData] = await Promise.all([
+    const [groupsData, scheduleData, predictionsData, teamsData, knockoutData] = await Promise.all([
         fetchWcGroups(),
         fetchWcSchedule(),
         fetchWcPredictions(),
         fetchWcTeams(),
+        fetchWcKnockout(),
     ]);
 
     // Pre-fetch squads for the initially selected teams
@@ -6749,6 +6860,7 @@ async function initWorldCup() {
     renderWcSquads();
     renderWcCompare();
     renderWcProbability();
+    renderWcKnockout();
 
     // Update WC data status pills based on API availability
     document.querySelectorAll(".wc-data-status").forEach((el) => {
