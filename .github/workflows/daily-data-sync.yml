@@ -19,6 +19,11 @@ concurrency:
   group: daily-data-sync
   cancel-in-progress: false
 
+# Explicit Bash enables pipefail so uv failures propagate through tee.
+defaults:
+  run:
+    shell: bash
+
 jobs:
   sync:
     runs-on: ubuntu-latest
