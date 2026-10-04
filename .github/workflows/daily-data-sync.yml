@@ -52,14 +52,38 @@ jobs:
 
       - name: Run data ingestion
         env:
+          REQUESTED_SOURCES: ${{ inputs.sources || 'football_data,clubelo' }}
           MPLBACKEND: Agg
           PYTHONPATH: src
           SOCCERDATA_DIR: ./data/soccerdata
           API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
         run: |
-          SOURCES="${{ github.event.inputs.sources || 'football_data,clubelo' }}"
-          echo "Ingesting sources: $SOURCES"
-          uv run python -m scoutfootball ingest --sources $SOURCES 2>&1 | tee ingest.log
+          case "$REQUESTED_SOURCES" in
+            ''|*$'\n'*|*$'\r'*|,*|*,|*,,*)
+              echo "::error::Provide a comma-separated list of data sources."
+              exit 1
+              ;;
+          esac
+
+          IFS=',' read -r -a REQUESTED_SOURCE_LIST <<< "$REQUESTED_SOURCES"
+          SOURCES=()
+          for source in "${REQUESTED_SOURCE_LIST[@]}"; do
+            source="${source#"${source%%[![:space:]]*}"}"
+            source="${source%"${source##*[![:space:]]}"}"
+            case "$source" in
+              football_data|clubelo|statsbomb_open|understat|sofascore|sofifa|\
+              api_football|transfermarkt_datasets)
+                SOURCES+=("$source")
+                ;;
+              *)
+                echo "::error::Unsupported data source."
+                exit 1
+                ;;
+            esac
+          done
+
+          echo "Ingesting sources: ${SOURCES[*]}"
+          uv run python -m scoutfootball ingest --sources "${SOURCES[@]}" 2>&1 | tee ingest.log
 
       - name: Run build-features (optional)
         if: github.event.inputs.run_full_pipeline == 'true'
