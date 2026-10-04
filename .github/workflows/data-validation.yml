@@ -10,6 +10,11 @@ concurrency:
   group: data-validation
   cancel-in-progress: true
 
+# Explicit Bash enables pipefail so validation failures propagate through tee.
+defaults:
+  run:
+    shell: bash
+
 jobs:
   validate:
     runs-on: ubuntu-latest
