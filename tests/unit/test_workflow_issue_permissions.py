@@ -10,7 +10,7 @@ WORKFLOW = ROOT / ".github/workflows/daily-data-sync.yml"
 
 def workflow_permissions(workflow: str) -> dict[str, str]:
     match = re.search(
-        r"(?m)^permissions:\n((?:  [a-z_]+: (?:read|write|none)\n)+)",
+        r"(?m)^permissions:\n((?:  [a-z_-]+: (?:read|write|none)\n)+)",
         workflow,
     )
     if match is None:
@@ -53,6 +53,23 @@ class DailySyncIssuePermissionTests(unittest.TestCase):
         step = failure_alert_step(workflow)
         self.assertIn("if: failure()", step)
         self.assertIn("github.rest.issues.create({", step)
+
+    def test_hyphenated_extra_permission_scope_fails_exact_scope_check(self) -> None:
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        workflow_with_extra_scope = workflow.replace(
+            "  issues: write\n",
+            "  issues: write\n  id-token: write\n",
+            1,
+        )
+        expected_permissions = {"contents": "write", "issues": "write"}
+        parsed_permissions = workflow_permissions(workflow_with_extra_scope)
+
+        self.assertEqual(
+            parsed_permissions,
+            {**expected_permissions, "id-token": "write"},
+        )
+        with self.assertRaises(AssertionError):
+            self.assertEqual(parsed_permissions, expected_permissions)
 
 
 if __name__ == "__main__":
