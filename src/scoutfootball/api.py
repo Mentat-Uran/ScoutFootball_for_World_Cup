@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 from dataclasses import dataclass
@@ -69,6 +70,7 @@ def _read_parquet(path: Path):
 _wc_cache = _TTLCache()
 _WC_ENRICHED_KEY = "wc_enriched"
 _WC_SCOUTING_KEY = "wc_scouting_queues"
+_WC_KNOCKOUT_CACHE_PREFIX = "wc_knockout:v1"
 
 
 def _get_wc_enriched_squads(force_refresh: bool = False):
@@ -2563,8 +2565,24 @@ def get_wc_knockout() -> dict:
     if not enriched_squads:
         return {"status": "error", "error": "World Cup squad data not available"}
 
-    group_preds = compute_group_predictions(strengths)
-    bracket = _simulate_knockout(strengths, group_preds, num_simulations=10000)
+    strength_signature = hashlib.sha256(
+        json.dumps(
+            strengths,
+            sort_keys=True,
+            separators=(",", ":"),
+            default=float,
+        ).encode("utf-8")
+    ).hexdigest()
+    cache_key = f"{_WC_KNOCKOUT_CACHE_PREFIX}:{strength_signature}:10000:42"
+    bracket = _wc_cache.get(cache_key)
+    if bracket is _MISSING:
+        group_preds = compute_group_predictions(strengths)
+        bracket = _simulate_knockout(
+            strengths,
+            group_preds,
+            num_simulations=10000,
+        )
+        _wc_cache.set(cache_key, bracket)
     return _clean_json_value(bracket)
 
 

@@ -603,6 +603,11 @@ Returns the projected knockout bracket from Round of 32 through Final, with
 per-match win probabilities and Monte Carlo tournament win probabilities.
 
 **Response**:
+The arrays below show one representative item each. Production responses contain
+16 Round-of-32 matches, 8 Round-of-16 matches, 4 quarter-finals, 2 semi-finals,
+and 1 final. Tournament probabilities include the 16 highest-ranked teams from
+the full 48-team field.
+
 ```json
 {
   "status": "ok",
@@ -613,16 +618,43 @@ per-match win probabilities and Monte Carlo tournament win probabilities.
       "home_win_probability": 0.92, "away_win_probability": 0.08
     }
   ],
-  "round_of_16": [ { "home_team", "home_strength", "away_team", "away_strength",
-    "home_win_probability", "away_win_probability", "from_match": [1, 2] } ],
-  "quarter_finals": [ ... ],
-  "semi_finals": [ ... ],
-  "final": [ ... ],
+  "round_of_16": [
+    {
+      "home_team": "Argentina", "home_strength": 0.77,
+      "away_team": "France", "away_strength": 0.82,
+      "home_win_probability": 0.43, "away_win_probability": 0.57,
+      "from_match": [1, 2]
+    }
+  ],
+  "quarter_finals": [
+    {
+      "home_team": "Argentina", "home_strength": 0.77,
+      "away_team": "Spain", "away_strength": 0.85,
+      "home_win_probability": 0.37, "away_win_probability": 0.63,
+      "from_match": [1, 2]
+    }
+  ],
+  "semi_finals": [
+    {
+      "home_team": "Argentina", "home_strength": 0.77,
+      "away_team": "Brazil", "away_strength": 0.80,
+      "home_win_probability": 0.46, "away_win_probability": 0.54,
+      "from_match": [1, 2]
+    }
+  ],
+  "final": [
+    {
+      "home_team": "Argentina", "home_strength": 0.77,
+      "away_team": "Spain", "away_strength": 0.85,
+      "home_win_probability": 0.37, "away_win_probability": 0.63,
+      "from_match": [1, 2]
+    }
+  ],
   "tournament_win_probability": [
     { "team": "Argentina", "group": "J", "strength": 0.77, "win_probability": 0.15 }
   ],
   "num_simulations": 10000,
-  "disclaimer": "Knockout probabilities use a simplified Bradley-Terry strength model..."
+  "disclaimer": "Knockout probabilities use a simplified Bradley-Terry strength model. Real match outcomes depend on form, injuries, tactics and home-field advantage not captured here. Non-Big5 league team strengths may be underestimated."
 }
 ```
 

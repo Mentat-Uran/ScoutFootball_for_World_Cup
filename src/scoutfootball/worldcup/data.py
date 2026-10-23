@@ -1962,6 +1962,8 @@ def _predict_group_finishes(
             team = ranked[0]
             destination.append((letter, team["team"], team.get("strength", 0.2)))
             remaining.remove(team)
+    for finishes in (firsts, seconds, thirds):
+        finishes.sort(key=lambda finish: finish[2], reverse=True)
     return firsts, seconds, thirds
 
 
@@ -2037,16 +2039,21 @@ def simulate_knockout(
         - ``quarter_finals``: list of 4 projected matchups.
         - ``semi_finals``: list of 2 projected matchups.
         - ``final``: the projected final matchup.
-        - ``tournament_win_probability``: list of all 48 teams with their
-          probability of winning the tournament (sorted descending).
+        - ``tournament_win_probability``: the 16 highest-probability teams
+          selected from the canonical 48-team field.
         - ``disclaimer``: limitations notice.
     """
     import random
 
     rng = random.Random(seed)
 
+    all_team_strengths = {
+        team: team_strengths.get(team, 0.2)
+        for teams in GROUPS.values()
+        for team in teams
+    }
     if group_predictions is None:
-        group_predictions = compute_group_predictions(team_strengths)
+        group_predictions = compute_group_predictions(all_team_strengths)
 
     firsts, seconds, thirds = _predict_group_finishes(group_predictions)
     r32_matchups = _seed_round_of_32(firsts, seconds, thirds)
@@ -2063,7 +2070,7 @@ def simulate_knockout(
             "away_team": at_,
             "away_strength": round(as_, 4),
             "home_win_probability": round(p_home, 4),
-            "away_win_probability": round(1 - p_home, 4),
+            "away_win_probability": 1.0 - round(p_home, 4),
         })
 
     # ── Project subsequent rounds by picking most likely winners ──
@@ -2087,7 +2094,7 @@ def simulate_knockout(
                 "away_team": w2,
                 "away_strength": round(w2_str, 4),
                 "home_win_probability": round(p_w1, 4),
-                "away_win_probability": round(1 - p_w1, 4),
+                "away_win_probability": 1.0 - round(p_w1, 4),
                 "from_match": [i + 1, i + 2],
             })
         return next_matchups
@@ -2099,7 +2106,7 @@ def simulate_knockout(
 
     # ── Monte Carlo tournament win probability ──
     # Simulate the full bracket num_simulations times
-    win_counts: dict[str, int] = {team: 0 for team in team_strengths}
+    win_counts: dict[str, int] = {team: 0 for team in all_team_strengths}
     sim_count = 0
 
     for _ in range(num_simulations):
@@ -2133,7 +2140,7 @@ def simulate_knockout(
 
     # Build tournament win probability list
     tournament_win_prob: list[dict] = []
-    for team, strength in sorted(team_strengths.items(), key=lambda x: -x[1]):
+    for team, strength in sorted(all_team_strengths.items(), key=lambda x: -x[1]):
         p = win_counts.get(team, 0) / sim_count if sim_count > 0 else 0.0
         tournament_win_prob.append({
             "team": team,

@@ -6128,6 +6128,7 @@ async function fetchWcKnockout() {
         const data = await fetchJson("/world-cup/knockout", { fetchOpts: { signal: AbortSignal.timeout(90000) } });
         if (data && data.status === "ok") {
             wcApiData.knockout = data;
+            wcApiData.apiOnline = true;
         }
         return data;
     } catch (e) {
