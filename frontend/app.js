@@ -6803,7 +6803,7 @@ function renderWcKnockout() {
 
     // Tournament win probability table
     if (tableEl) {
-        const winProb = data.tournament_win_probability || [];
+        const winProb = (data.tournament_win_probability || []).slice(0, 16);
         tableEl.innerHTML = winProb.map((x, i) => {
             const pct = (x.win_probability || 0) * 100;
             return `<tr>

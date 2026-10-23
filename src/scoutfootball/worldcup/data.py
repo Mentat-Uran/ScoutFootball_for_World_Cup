@@ -2039,8 +2039,8 @@ def simulate_knockout(
         - ``quarter_finals``: list of 4 projected matchups.
         - ``semi_finals``: list of 2 projected matchups.
         - ``final``: the projected final matchup.
-        - ``tournament_win_probability``: the 16 highest-probability teams
-          selected from the canonical 48-team field.
+        - ``tournament_win_probability``: all 48 teams with their
+          probability of winning the tournament (sorted descending).
         - ``disclaimer``: limitations notice.
     """
     import random
@@ -2157,7 +2157,7 @@ def simulate_knockout(
         "quarter_finals": qf,
         "semi_finals": sf,
         "final": final,
-        "tournament_win_probability": tournament_win_prob[:16],
+        "tournament_win_probability": tournament_win_prob,
         "num_simulations": num_simulations,
         "disclaimer": (
             "Knockout probabilities use a simplified Bradley-Terry strength "

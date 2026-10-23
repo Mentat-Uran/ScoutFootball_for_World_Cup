@@ -189,9 +189,14 @@ class TestSimulateKnockout:
         probs = [t["win_probability"] for t in result["tournament_win_probability"]]
         assert probs == sorted(probs, reverse=True)
 
-    def test_tournament_win_prob_top_16(self, full_strengths):
+    def test_tournament_win_prob_contains_all_48_teams(self, full_strengths):
         result = simulate_knockout(full_strengths, num_simulations=500, seed=42)
-        assert len(result["tournament_win_probability"]) <= 16
+        teams = {entry["team"] for entry in result["tournament_win_probability"]}
+        expected_teams = {
+            team for group_teams in GROUPS.values() for team in group_teams
+        }
+        assert len(result["tournament_win_probability"]) == 48
+        assert teams == expected_teams
 
     def test_reproducible_with_same_seed(self, full_strengths):
         r1 = simulate_knockout(full_strengths, num_simulations=100, seed=42)
@@ -209,6 +214,7 @@ class TestSimulateKnockout:
         assert result["status"] == "ok"
         # Groups always have 48 teams, strengths default to 0.2
         assert len(result["round_of_32"]) == 16
+        assert len(result["tournament_win_probability"]) == 48
 
     def test_accepts_precomputed_group_predictions(self, full_strengths):
         preds = compute_group_predictions(full_strengths)

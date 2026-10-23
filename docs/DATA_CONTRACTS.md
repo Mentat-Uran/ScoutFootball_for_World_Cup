@@ -605,8 +605,8 @@ per-match win probabilities and Monte Carlo tournament win probabilities.
 **Response**:
 The arrays below show one representative item each. Production responses contain
 16 Round-of-32 matches, 8 Round-of-16 matches, 4 quarter-finals, 2 semi-finals,
-and 1 final. Tournament probabilities include the 16 highest-ranked teams from
-the full 48-team field.
+and 1 final. Tournament probabilities include all 48 teams; the frontend shows
+the top 16 in its table.
 
 ```json
 {
