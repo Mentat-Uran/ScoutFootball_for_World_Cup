@@ -81,6 +81,7 @@ ScoutFootball 的长期形态是本地优先的足球数据研究平台，而不
 
 ## 已完成
 
+- [x] **世界杯淘汰赛对阵表预测器**（2026-07-11）：新增 `simulate_knockout()` 函数，使用 Bradley-Terry 强度模型和 Monte Carlo 模拟（10,000 次迭代）预测从 32 强到决赛的完整淘汰赛对阵表。包括每场比赛的胜率、逐轮晋级预测和夺冠概率排名。新增 `GET /world-cup/knockout` API 端点；前端新增"淘汰赛"视图含对阵表卡片（5 轮纵列，高亮预测胜者）和夺冠概率表（Top 16）。支持中英双语和移动端单列降级。24 个单元测试覆盖胜率计算、种子配对、模拟可复现性和空数据路径。
 - [x] **球探工作区服务端持久化**（2026-07-11，v1.0.3）：新增 `ScoutingWorkspaceStore` 服务端持久化层，支持 `PUT/GET /scouting-workspaces/{id}`、`/scouting-workspaces/latest`、`/scouting-workspaces/capabilities` 端点。使用 If-Match 乐观并发控制（revision 版本号）、原子写入、不可变备份和 loopback 访问控制。
 - [x] **H2H 近期状态趋势增强**（2026-07-11，v1.0.3）：新增 `compute_form_trend()` 函数，计算 momentum（近期 vs 较早期 PPG 差值）、form_rating（0-100 综合评分）、trend_label（improving/declining/stable）、进球/失球趋势、clean_sheets、failed_to_score 和累积积分 sparkline 数据。前端新增 form trend 卡片含评分条、趋势徽章和 SVG sparkline。空数据和异常路径均有零状态降级。
 - [x] **球员球探报告导出**（2026-07-11，v1.0.3）：将单行球员 CSV 导出替换为多段球探报告，支持 CSV 和 JSON 两种格式，覆盖 profile、radar、position_percentiles、xT_summary、3-season trend、low_confidence_reasons、scouting_notes、season_history 八个 section。修复 `position_percentiles` 字段名 bug（API 返回复数 dict，前端读单数 undefined）和 radar label bug（Volume/Overall → Reliability/Impact）。

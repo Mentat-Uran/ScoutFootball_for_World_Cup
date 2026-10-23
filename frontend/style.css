@@ -1677,6 +1677,102 @@ tbody button {
     color: var(--text-primary);
 }
 
+/* ── World Cup Knockout Bracket ─────────────────────────────────────────── */
+
+.ko-bracket {
+    display: flex;
+    gap: 12px;
+    overflow-x: auto;
+    padding: 8px 4px 16px;
+    align-items: flex-start;
+}
+
+.ko-round {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    min-width: 180px;
+    flex: 1;
+}
+
+.ko-round-title {
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    text-align: center;
+    margin-bottom: 4px;
+    padding: 4px 0;
+    border-bottom: 1px solid var(--glass-border);
+}
+
+.ko-matchup {
+    background: rgba(29, 36, 48, 0.04);
+    border: 1px solid var(--glass-border);
+    border-radius: 10px;
+    overflow: hidden;
+    transition: border-color 0.15s;
+}
+
+.ko-matchup:hover {
+    border-color: var(--glass-border-strong, rgba(29, 36, 48, 0.2));
+}
+
+.ko-team {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 7px 10px;
+    font-size: 0.82rem;
+    border-bottom: 1px solid var(--glass-border);
+    transition: background 0.15s;
+}
+
+.ko-team:last-child {
+    border-bottom: none;
+}
+
+.ko-team.ko-winner {
+    background: rgba(48, 209, 88, 0.08);
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.ko-name {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.ko-prob {
+    min-width: 36px;
+    text-align: right;
+    font-size: 0.78rem;
+    color: var(--text-muted);
+}
+
+.ko-team.ko-winner .ko-prob {
+    color: var(--accent, #30d158);
+    font-weight: 600;
+}
+
+@media (max-width: 760px) {
+    .ko-bracket {
+        flex-direction: column;
+        overflow-x: visible;
+    }
+    .ko-round {
+        min-width: unset;
+    }
+    .ko-round-title {
+        border-bottom: none;
+        border-top: 2px solid var(--glass-border);
+        margin-top: 8px;
+    }
+}
+
 /* ── Author / project card ──────────────────────────────────────────────── */
 
 .nav-author-card {
